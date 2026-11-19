@@ -31,6 +31,10 @@ yarn-error.log*
 /data/*.db-journal
 /data/*.db-wal
 /data/*.db-shm
+prisma/*.db
+prisma/*.db-journal
+prisma/*.db-wal
+prisma/*.db-shm
 
 # Server Logs & Backups
 /logs
