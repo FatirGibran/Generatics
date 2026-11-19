@@ -19,6 +19,7 @@ interface SpinWheelProps {
   themes: { id: string; name: string }[];
   isSpinOpen: boolean;
   hasSpun?: boolean;
+  onSpinStart?: () => void;
   onSpinComplete: (result: SpinResult) => void;
   /** Called when the server says the session is no longer valid (HTTP 401). */
   onUnauthorized?: () => void;
@@ -110,6 +111,7 @@ export default function SpinWheel({
   themes,
   isSpinOpen,
   hasSpun = false,
+  onSpinStart,
   onSpinComplete,
   onUnauthorized,
 }: SpinWheelProps) {
@@ -229,10 +231,14 @@ export default function SpinWheel({
 
   const landingAngle = (themeName?: string) => {
     const wanted = (themeName ?? "").trim().toLowerCase();
-    const found = displayThemes.findIndex((t) => t.name.trim().toLowerCase() === wanted);
+    const found = displayThemes.findIndex((t) => {
+      const tn = t.name.trim().toLowerCase();
+      return tn === wanted || tn.includes(wanted) || wanted.includes(tn);
+    });
     const index = found >= 0 ? found : 0;
-    // Never land within 12% of a segment boundary.
-    return index * segmentAngle + segmentAngle * (0.12 + Math.random() * 0.76);
+    // Target comfortably near the center of the segment (between 35% and 65%)
+    const targetWithinSegment = segmentAngle * (0.35 + Math.random() * 0.3);
+    return index * segmentAngle + targetWithinSegment;
   };
 
   const fireConfetti = (stance: Stance) => {
@@ -308,7 +314,7 @@ export default function SpinWheel({
       busyRef.current = false;
       setIsSpinning(false);
       onSpinComplete(toResult(data));
-    }, withConfetti ? 500 : 0);
+    }, withConfetti ? 2500 : 0);
   };
 
   const handleSpin = async () => {
@@ -317,101 +323,90 @@ export default function SpinWheel({
     setError(null);
     setIsSpinning(true);
     setSettledStance(null);
+    onSpinStart?.();
     idleRef.current?.stop();
 
     lastIdxRef.current = Math.floor(mod(-rotation.get(), 360) / segmentAngle) % count;
     soundManager.pauseBGMForSpin();
     soundManager.playSpinLaunch();
 
-    // The request runs in parallel with the anticipation phase.
-    let settled = false;
-    const request = requestSpin().then((outcome) => {
-      settled = true;
-      return outcome;
-    });
+    // Trigger API request in parallel
+    const request = requestSpin();
 
     if (reduce) {
       const outcome = await request;
       if (!mountedRef.current) return;
       if (!outcome.ok) {
         if (outcome.status === 401) onUnauthorized?.();
-        if (outcome.data?.alreadySpun) {
-          reveal(outcome.data, false);
-          return;
-        }
         abort(friendlyError(outcome));
         return;
       }
-      if (outcome.data.alreadySpun) {
-        reveal(outcome.data, false);
-        return;
-      }
-      const from = rotation.get();
-      const to = from + mod(-landingAngle(outcome.data.themeName) - from, 360);
-      await track(animate(rotation, to, { duration: 0.5, ease: "easeOut" }));
-      if (!mountedRef.current) return;
       setSettledStance(outcome.data.stance ?? null);
       setLampState("settled");
       reveal(outcome.data, true);
       return;
     }
 
-    // Phase 1: anticipation (0 - 0.4s)
+    // Step 1: Anticipation pull-back (0.35s)
     const start = rotation.get();
     await Promise.all([
-      track(animate(rotation, start - 10, { duration: 0.4, ease: "easeOut" })),
-      track(animate(scale, [1, 0.955, 0.972, 0.95], { duration: 0.4, ease: "easeInOut" })),
+      track(animate(rotation, start - 12, { duration: 0.35, ease: "easeOut" })),
+      track(animate(scale, [1, 0.955, 0.965], { duration: 0.35, ease: "easeInOut" })),
     ]);
     if (!mountedRef.current) return;
 
-    // Phase 2: high-speed shuffle
+    // Step 2: High-speed rotation & flashing lamps while awaiting network outcome
     tickEnabledRef.current = true;
     setTrail(true);
     startFlash();
 
-    // If the server is slower than the anticipation, keep the wheel moving.
-    while (!settled && mountedRef.current) {
-      await track(
-        animate(rotation, rotation.get() + 360, { duration: 0.7, ease: "linear", onUpdate: handleUpdate })
-      );
-    }
     const outcome = await request;
     if (!mountedRef.current) return;
 
     if (!outcome.ok) {
       if (outcome.status === 401) onUnauthorized?.();
-      if (outcome.data?.alreadySpun) {
-        reveal(outcome.data, false);
-        return;
-      }
       abort(friendlyError(outcome));
       return;
     }
-    if (outcome.data.alreadySpun) {
-      reveal(outcome.data, false);
-      return;
-    }
 
-    const from = rotation.get();
-    const rough = from + 1800 + FINAL_DECEL_DEGREES;
-    const finalRotation = rough + mod(-landingAngle(outcome.data.themeName) - rough, 360);
-    const phase2End = finalRotation - FINAL_DECEL_DEGREES;
+    // Step 3: Compute exact finalRotation for the chosen theme
+    const currentRot = rotation.get();
+    // Guarantee 6 full rotations (2160 deg) for dramatic spin suspense
+    const baseRotations = 2160;
+    const targetAngle = landingAngle(outcome.data.themeName);
+    const neededOffset = mod(-targetAngle - (currentRot + baseRotations), 360);
+    const finalRotation = currentRot + baseRotations + neededOffset;
 
-    await track(animate(rotation, phase2End, { duration: 2.1, ease: "linear", onUpdate: handleUpdate }));
-    if (!mountedRef.current) return;
-
-    // Phase 3: dramatic deceleration
-    setTrail(false);
+    // Single seamless, natural physics deceleration curve:
+    // Starts fast and smoothly slows down with realistic friction right to the winning slice!
     await track(
-      animate(rotation, finalRotation, { duration: 1.4, ease: EASE_DECEL, onUpdate: handleUpdate })
+      animate(rotation, finalRotation, {
+        duration: 4.8,
+        ease: [0.15, 0.92, 0.22, 1],
+        onUpdate: handleUpdate,
+      })
     );
     if (!mountedRef.current) return;
 
-    // Phase 4: grand reveal
+    // Step 4: Grand Winner Landing & Celebration (2.5 seconds on wheel)
     stopFlash();
+    tickEnabledRef.current = false;
+    setTrail(false);
     setSettledStance(outcome.data.stance ?? null);
     setLampState("settled");
-    reveal(outcome.data, true);
+    soundManager.playFanfare();
+    fireConfetti(outcome.data.stance ?? "PRO");
+
+    // Rescale wheel with a gentle victory bounce
+    track(animate(scale, [1, 1.04, 1], { duration: 0.6, ease: "easeOut" }));
+
+    // Hold winner on the wheel for 2.5 seconds so participant absorbs their theme & stance!
+    later(() => {
+      soundManager.resumeBGMAfterSpin();
+      busyRef.current = false;
+      setIsSpinning(false);
+      onSpinComplete(toResult(outcome.data));
+    }, 2500);
   };
 
   const segments = useMemo(
@@ -645,6 +640,23 @@ export default function SpinWheel({
         {lamp("KONTRA")}
       </div>
 
+      <AnimatePresence>
+        {settledStance && (
+          <motion.div
+            initial={{ opacity: 0, scale: 0.85, y: 8 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.85 }}
+            className="mt-4 flex items-center gap-2 rounded-full border border-[#FACC15]/80 bg-[#FAF6EB] px-5 py-2 font-display text-sm font-black text-[#0E152E] shadow-[0_0_24px_rgba(250,204,21,0.6)]"
+          >
+            <Sparkles className="h-4 w-4 text-[#CA8A04]" />
+            <span>
+              Posisi Terpilih: Tim {settledStance === "PRO" ? "PRO" : "KONTRA"}
+            </span>
+            <Sparkles className="h-4 w-4 text-[#CA8A04]" />
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* CTA */}
       <div className="mt-7 flex flex-col items-center">
         <motion.div
@@ -671,7 +683,9 @@ export default function SpinWheel({
               {hasSpun
                 ? "Kesempatan Spin Telah Digunakan"
                 : isSpinning
-                ? "Memutar…"
+                ? settledStance
+                  ? `Terpilih: Tim ${settledStance === "PRO" ? "PRO" : "KONTRA"}!`
+                  : "Memutar Roda…"
                 : "Spin Tema, Mosi & Posisi"}
             </span>
             <Sparkles className="h-5 w-5 fill-current" aria-hidden />
