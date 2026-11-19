@@ -223,7 +223,7 @@ export default function OverviewTab({ participants, refreshing, onRefresh, onReq
 
   const stats = useMemo(() => {
     const total = participants.length;
-    const spun = participants.filter((p) => p.hasSpun).length;
+    const spun = participants.filter((p) => Boolean(p.hasSpun)).length;
     const split = (batch: string) => {
       const list = participants.filter((p) => p.sessionBatch === batch);
       return {
@@ -244,7 +244,10 @@ export default function OverviewTab({ participants, refreshing, onRefresh, onReq
   }, [participants]);
 
   const feed = useMemo(
-    () => participants.filter((p) => p.hasSpun).sort((a, b) => toMillis(b.spunAt) - toMillis(a.spunAt)),
+    () =>
+      participants
+        .filter((p) => Boolean(p.hasSpun))
+        .sort((a, b) => toMillis(b.spunAt) - toMillis(a.spunAt)),
     [participants]
   );
 

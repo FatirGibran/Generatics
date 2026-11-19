@@ -238,13 +238,6 @@ export default function CosmicBackground() {
       >
         <path d="M24 46a16 16 0 0 1 2-32 22 22 0 0 1 42-4 18 18 0 0 1 8 36Z" fill="#818CF8" />
       </svg>
-      <svg
-        className="absolute top-[34%] right-[3%] w-8 h-8 animate-float opacity-75 hidden md:block"
-        style={{ animationDelay: "0.8s" }}
-        viewBox="0 0 32 32"
-      >
-        <rect x="6" y="6" width="20" height="20" rx="3" transform="rotate(45 16 16)" fill="none" stroke="#FACC15" strokeWidth="2" />
-      </svg>
       <svg className="absolute top-[28%] left-[2.5%] w-3.5 h-3.5 animate-twinkle" viewBox="0 0 10 10">
         <path d="M5 0 6 4 10 5 6 6 5 10 4 6 0 5 4 4Z" fill="#F472B6" />
       </svg>

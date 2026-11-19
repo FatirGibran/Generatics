@@ -106,11 +106,12 @@ export default function AdminDashboardPage() {
     try {
       const ts = Date.now();
       const headers = { "Cache-Control": "no-cache, no-store" };
-      const [setRes, thmRes, motRes, partRes] = await Promise.all([
+      const [setRes, thmRes, motRes, partRes, ovRes] = await Promise.all([
         fetch(`/api/admin/settings?_t=${ts}`, { cache: "no-store", headers }),
         fetch(`/api/admin/themes?_t=${ts}`, { cache: "no-store", headers }),
         fetch(`/api/admin/motions?_t=${ts}`, { cache: "no-store", headers }),
         fetch(`/api/admin/participants?_t=${ts}`, { cache: "no-store", headers }),
+        fetch(`/api/admin/overview?_t=${ts}`, { cache: "no-store", headers }),
       ]);
 
       if (setRes.ok) {
@@ -125,9 +126,16 @@ export default function AdminDashboardPage() {
         const mData = await motRes.json();
         if (mData.motions) setMotions(mData.motions);
       }
-      if (partRes.ok) {
+      if (ovRes.ok) {
+        const ovData = await ovRes.json();
+        if (Array.isArray(ovData.participants)) {
+          setParticipants(ovData.participants);
+        }
+      } else if (partRes.ok) {
         const pData = await partRes.json();
-        if (pData.participants) setParticipants(pData.participants);
+        if (Array.isArray(pData.participants)) {
+          setParticipants(pData.participants);
+        }
       }
     } catch {
       // Fallback

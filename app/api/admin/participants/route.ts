@@ -54,7 +54,7 @@ export async function GET(req: NextRequest) {
           fullName: p.fullName,
           accessToken: p.accessToken,
           sessionBatch: p.sessionBatch,
-          hasSpun: p.hasSpun,
+          hasSpun: Boolean(p.hasSpun),
           assignedMotionId: p.assignedMotionId,
           assignedMotionText: p.assignedMotion?.motionText || null,
           assignedThemeName: p.assignedMotion?.theme?.name || null,
