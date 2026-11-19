@@ -78,7 +78,7 @@ export const SEED_PARTICIPANTS = [
   {
     username: "103112430153",
     fullName: "Fatir Gibran",
-    accessToken: "STR-PCE9",
+    accessToken: "STR-EXCY",
     sessionBatch: "Day 1",
   },
   {

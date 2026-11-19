@@ -8,8 +8,8 @@ import { soundManager } from "@/lib/audio";
 interface PrepTimerProps {
   initialSeconds?: number;
   username?: string;
+  spunAt?: string | null;
   className?: string;
-  onCompleteSession?: () => void;
 }
 
 type Status = "idle" | "running" | "paused" | "done";
@@ -27,12 +27,15 @@ const URGENT_MS = 30_000;
 export default function PrepTimer({
   initialSeconds = 300,
   username,
+  spunAt,
   className = "",
-  onCompleteSession,
 }: PrepTimerProps) {
   const reduce = useReducedMotion();
   const totalMs = Math.max(1, Math.round(initialSeconds)) * 1000;
-  const storageKey = `generatics_timer_${username || "anonymous"}`;
+  
+  // Storage key uniquely tied to both username and the current spin timestamp (spunAt)
+  const spunId = spunAt ? new Date(spunAt).getTime() : "init";
+  const storageKey = `generatics_timer_${username || "anonymous"}_${spunId}`;
 
   const [status, setStatus] = useState<Status>("idle");
   const [remainingMs, setRemainingMs] = useState<number | null>(null);
@@ -40,6 +43,21 @@ export default function PrepTimer({
 
   const endRef = useRef(0);
   const alertedRef = useRef(false);
+
+  // Clean up any stale timer keys for this user from previous spins
+  useEffect(() => {
+    if (typeof window === "undefined" || !username) return;
+    try {
+      const prefix = `generatics_timer_${username}_`;
+      Object.keys(localStorage).forEach((k) => {
+        if (k.startsWith(prefix) && k !== storageKey) {
+          localStorage.removeItem(k);
+        }
+      });
+    } catch {
+      // Ignore storage errors
+    }
+  }, [username, storageKey]);
 
   // Restore saved timer state from localStorage on mount
   useEffect(() => {
@@ -319,7 +337,7 @@ export default function PrepTimer({
         </motion.div>
       )}
 
-      {/* Controls: Explicit type="button" and e.stopPropagation() to prevent any parent triggers */}
+      {/* Controls: Pure timer controls only (no duplicate closing/announcement buttons) */}
       <div className="mt-5 flex flex-wrap items-center justify-center gap-3">
         {status === "idle" && (
           <button
@@ -385,25 +403,6 @@ export default function PrepTimer({
 
         {isDone && (
           <div className="flex flex-wrap items-center justify-center gap-2.5">
-            {onCompleteSession && (
-              <motion.button
-                type="button"
-                initial={{ scale: 0.95, opacity: 0 }}
-                animate={{ scale: 1, opacity: 1 }}
-                whileHover={{ scale: 1.03 }}
-                whileTap={{ scale: 0.97 }}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  soundManager.playFanfare();
-                  onCompleteSession();
-                }}
-                className="btn-gold inline-flex items-center justify-center gap-2 px-6 py-3 font-sans text-sm font-black uppercase tracking-wider shadow-[0_4px_20px_rgba(250,204,21,0.45)]"
-              >
-                <span>Selesai &amp; Lanjut Pengumuman</span>
-                <span aria-hidden>&rarr;</span>
-              </motion.button>
-            )}
-
             <button
               type="button"
               onClick={handleReset}

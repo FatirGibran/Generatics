@@ -202,21 +202,72 @@ export default function SpinPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Real-time synchronization loop: strictly runs ONLY if the participant has NOT spun and is NOT spinning
-  // Once the participant has spun, polling is strictly terminated to prevent state overwriting
+  // Real-time synchronization loop:
+  // 1. If unspun, sync themes and settings periodically
+  // 2. If already spun or locked, check every 5s and on window focus whether admin has reset this participant
   useEffect(() => {
-    if (!ready || loadError || isSpinning || user?.hasSpun || result) {
+    if (!ready || loadError || isSpinning) {
       return;
     }
 
-    const intervalId = window.setInterval(() => {
-      if (!isSpinningRef.current && !user?.hasSpun && !result) {
+    const checkState = async () => {
+      if (isSpinningRef.current) return;
+
+      // When participant has already spun or has active result, check if admin triggered a reset
+      if (user?.hasSpun || result) {
+        try {
+          const res = await fetch(`/api/auth/me?role=participant&_t=${Date.now()}`, {
+            cache: "no-store",
+          });
+          if (res.status === 401) {
+            router.replace("/");
+            return;
+          }
+          if (!res.ok) return;
+          const me = await res.json();
+          if (!aliveRef.current || isSpinningRef.current) return;
+
+          if (me.authenticated && me.participant && me.participant.hasSpun === false) {
+            // Admin has performed a reset! Clear local caches and unlock spin arena
+            const uname = me.participant.username;
+            if (typeof window !== "undefined" && uname) {
+              sessionStorage.removeItem(`generatics_closing_${uname}`);
+              localStorage.removeItem(`generatics_result_${uname}`);
+              try {
+                const prefix = `generatics_timer_${uname}`;
+                Object.keys(localStorage).forEach((k) => {
+                  if (k.startsWith(prefix)) localStorage.removeItem(k);
+                });
+              } catch {
+                // Ignore storage errors
+              }
+            }
+            setUser(me.participant);
+            setResult(null);
+            setShowClosing(false);
+            soundManager.setBGMMood("curious");
+          }
+        } catch {
+          // Network errors ignored during passive sync
+        }
+      } else {
+        // Participant has not spun: poll spin configuration
         syncSpinState().catch(() => undefined);
       }
-    }, 4000);
+    };
 
-    return () => window.clearInterval(intervalId);
-  }, [ready, loadError, isSpinning, user?.hasSpun, result, syncSpinState]);
+    const intervalId = window.setInterval(checkState, 4000);
+    const onFocus = () => {
+      checkState().catch(() => undefined);
+    };
+
+    window.addEventListener("focus", onFocus);
+
+    return () => {
+      window.clearInterval(intervalId);
+      window.removeEventListener("focus", onFocus);
+    };
+  }, [ready, loadError, isSpinning, user?.hasSpun, result, router, syncSpinState]);
 
   const handleLogout = async () => {
     try {
@@ -331,6 +382,34 @@ export default function SpinPage() {
       <Navbar user={navUser} onLogout={handleLogout} />
 
       <main className="relative z-10 mx-auto flex w-full max-w-3xl flex-1 flex-col items-center px-4 py-8 md:py-12">
+        {ready && !loadError && !showClosing && (
+          <motion.div
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.5 }}
+            className="mb-8 flex flex-col items-center text-center w-full max-w-2xl px-2"
+          >
+            <div className="inline-flex items-center gap-2 rounded-full border border-[#FACC15]/30 bg-[#FACC15]/10 px-3.5 py-1 text-[11px] font-extrabold uppercase tracking-[0.25em] text-[#FACC15] backdrop-blur-md shadow-[0_0_15px_rgba(250,204,21,0.2)]">
+              <Sparkles className="h-3.5 w-3.5 text-[#FACC15]" />
+              <span>GENERATICS 2026 &bull; TWINKLE, TWINKLE</span>
+            </div>
+
+            <h1 className="mt-3 text-balance font-display text-3xl font-black tracking-tight text-[#FAF6EB] sm:text-4xl md:text-5xl drop-shadow-[0_2px_12px_rgba(0,0,0,0.8)]">
+              DEBATE GENERATICS 2026
+            </h1>
+
+            <p className="mt-1 font-display text-base italic text-[#FACC15]/90 sm:text-lg">
+              Beyond the Stars: A Universe of Perspectives
+            </p>
+
+            <div className="mt-2.5 inline-flex items-center gap-2 rounded-md bg-[#FAF6EB]/5 px-3 py-1 font-sans text-xs font-semibold tracking-wider text-[#FAF6EB]/70 border border-[#FAF6EB]/10">
+              <span>BABAK I &mdash; INDIVIDUAL DEBATE</span>
+              <span className="text-[#FACC15]">&bull;</span>
+              <span className="uppercase text-[#FAF6EB]/90">{user?.sessionBatch || "DAY 1"}</span>
+            </div>
+          </motion.div>
+        )}
+
         {!ready ? (
           <StarLoader
             label={
@@ -382,7 +461,7 @@ export default function SpinPage() {
                 <PrepTimer
                   initialSeconds={prepDuration}
                   username={user?.username}
-                  onCompleteSession={handleOpenClosing}
+                  spunAt={activeResult.spunAt}
                 />
               </ResultCard>
 
