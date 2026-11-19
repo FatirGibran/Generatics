@@ -21,18 +21,26 @@ export async function GET(req: NextRequest) {
       orderBy: { createdAt: "desc" },
     });
 
-    return NextResponse.json({
-      motions: motions.map((m) => ({
-        id: m.id,
-        themeId: m.themeId,
-        themeName: m.theme?.name || "Tema",
-        motionText: m.motionText,
-        maxUsage: m.maxUsage,
-        usedCount: m.usedCount,
-        isActive: m.isActive,
-        createdAt: m.createdAt.toISOString(),
-      })),
-    });
+    return NextResponse.json(
+      {
+        motions: motions.map((m) => ({
+          id: m.id,
+          themeId: m.themeId,
+          themeName: m.theme?.name || "Tema",
+          motionText: m.motionText,
+          maxUsage: m.maxUsage,
+          usedCount: m.usedCount,
+          isActive: m.isActive,
+          createdAt: m.createdAt.toISOString(),
+        })),
+      },
+      {
+        headers: {
+          "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+          Pragma: "no-cache",
+        },
+      }
+    );
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : "Gagal memuat mosi.";
     return NextResponse.json({ error: message }, { status: 500 });

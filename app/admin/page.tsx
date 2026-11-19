@@ -104,11 +104,13 @@ export default function AdminDashboardPage() {
   // Initial fetch for Settings & Themes
   const refreshData = useCallback(async () => {
     try {
+      const ts = Date.now();
+      const headers = { "Cache-Control": "no-cache, no-store" };
       const [setRes, thmRes, motRes, partRes] = await Promise.all([
-        fetch("/api/admin/settings"),
-        fetch("/api/admin/themes"),
-        fetch("/api/admin/motions"),
-        fetch("/api/admin/participants"),
+        fetch(`/api/admin/settings?_t=${ts}`, { cache: "no-store", headers }),
+        fetch(`/api/admin/themes?_t=${ts}`, { cache: "no-store", headers }),
+        fetch(`/api/admin/motions?_t=${ts}`, { cache: "no-store", headers }),
+        fetch(`/api/admin/participants?_t=${ts}`, { cache: "no-store", headers }),
       ]);
 
       if (setRes.ok) {
@@ -199,14 +201,14 @@ export default function AdminDashboardPage() {
     try {
       const res = await fetch("/api/admin/participants/reset", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "Cache-Control": "no-cache" },
         body: JSON.stringify({ username }),
       });
+      const d = await res.json().catch(() => ({}));
       if (res.ok) {
         notify(`Spin peserta ${username} berhasil di-reset.`);
         refreshData();
       } else {
-        const d = await res.json();
         notify(d.error || "Gagal mereset spin.", "error");
       }
     } catch {
@@ -287,15 +289,19 @@ export default function AdminDashboardPage() {
   const handleDeleteParticipant = async (username: string) => {
     soundManager.playClick();
     try {
-      const res = await fetch(`/api/admin/participants?username=${username}`, { method: "DELETE" });
+      const res = await fetch(`/api/admin/participants?username=${encodeURIComponent(username)}`, {
+        method: "DELETE",
+        headers: { "Cache-Control": "no-cache" },
+      });
+      const d = await res.json().catch(() => ({}));
       if (res.ok) {
-        notify(`Peserta ${username} dihapus.`);
+        notify(`Peserta ${username} berhasil dihapus.`);
         refreshData();
       } else {
-        notify("Gagal menghapus peserta.", "error");
+        notify(d.error || "Gagal menghapus peserta.", "error");
       }
     } catch {
-      notify("Gagal menghapus peserta.", "error");
+      notify("Terjadi gangguan jaringan saat menghapus peserta.", "error");
     }
   };
 

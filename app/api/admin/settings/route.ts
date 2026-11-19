@@ -23,13 +23,21 @@ export async function GET() {
       prepDurationSeconds: 300,
     };
 
-    return NextResponse.json({
-      settings: {
-        isSpinOpen: data.isSpinOpen,
-        randomMode: data.randomMode,
-        prepDurationSeconds: data.prepDurationSeconds,
+    return NextResponse.json(
+      {
+        settings: {
+          isSpinOpen: data.isSpinOpen,
+          randomMode: data.randomMode,
+          prepDurationSeconds: data.prepDurationSeconds,
+        },
       },
-    });
+      {
+        headers: {
+          "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+          Pragma: "no-cache",
+        },
+      }
+    );
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : "Gagal memuat pengaturan.";
     return NextResponse.json({ error: message }, { status: 500 });

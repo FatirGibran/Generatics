@@ -47,20 +47,28 @@ export async function GET(req: NextRequest) {
       orderBy: { createdAt: "desc" },
     });
 
-    return NextResponse.json({
-      participants: participants.map((p) => ({
-        username: p.username,
-        fullName: p.fullName,
-        accessToken: p.accessToken,
-        sessionBatch: p.sessionBatch,
-        hasSpun: p.hasSpun,
-        assignedMotionId: p.assignedMotionId,
-        assignedMotionText: p.assignedMotion?.motionText || null,
-        assignedThemeName: p.assignedMotion?.theme?.name || null,
-        assignedStance: p.assignedStance,
-        spunAt: p.spunAt ? p.spunAt.toISOString() : null,
-      })),
-    });
+    return NextResponse.json(
+      {
+        participants: participants.map((p) => ({
+          username: p.username,
+          fullName: p.fullName,
+          accessToken: p.accessToken,
+          sessionBatch: p.sessionBatch,
+          hasSpun: p.hasSpun,
+          assignedMotionId: p.assignedMotionId,
+          assignedMotionText: p.assignedMotion?.motionText || null,
+          assignedThemeName: p.assignedMotion?.theme?.name || null,
+          assignedStance: p.assignedStance,
+          spunAt: p.spunAt ? p.spunAt.toISOString() : null,
+        })),
+      },
+      {
+        headers: {
+          "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+          Pragma: "no-cache",
+        },
+      }
+    );
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : "Gagal memuat data peserta.";
     return NextResponse.json({ error: message }, { status: 500 });

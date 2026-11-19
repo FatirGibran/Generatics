@@ -16,15 +16,23 @@ export async function GET() {
       orderBy: { createdAt: "desc" },
     });
 
-    return NextResponse.json({
-      themes: themes.map((t) => ({
-        id: t.id,
-        name: t.name,
-        description: t.description || "",
-        isActive: t.isActive,
-        createdAt: t.createdAt.toISOString(),
-      })),
-    });
+    return NextResponse.json(
+      {
+        themes: themes.map((t) => ({
+          id: t.id,
+          name: t.name,
+          description: t.description || "",
+          isActive: t.isActive,
+          createdAt: t.createdAt.toISOString(),
+        })),
+      },
+      {
+        headers: {
+          "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+          Pragma: "no-cache",
+        },
+      }
+    );
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : "Gagal memuat tema.";
     return NextResponse.json({ error: message }, { status: 500 });
