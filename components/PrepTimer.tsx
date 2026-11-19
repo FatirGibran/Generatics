@@ -2,27 +2,37 @@
 
 import { useEffect, useRef, useState } from "react";
 import { motion, useReducedMotion } from "framer-motion";
-import { Play, AlertTriangle, CheckCircle2 } from "lucide-react";
+import { Play, Pause, RotateCcw, AlertTriangle, CheckCircle2 } from "lucide-react";
 import { soundManager } from "@/lib/audio";
 
 interface PrepTimerProps {
   initialSeconds?: number;
+  username?: string;
   className?: string;
   onCompleteSession?: () => void;
 }
 
-type Status = "idle" | "running" | "done";
+type Status = "idle" | "running" | "paused" | "done";
+
+interface StoredTimer {
+  status: Status;
+  remainingMs: number;
+  endTimestamp?: number;
+  initialSeconds: number;
+}
 
 const STAR_COUNT = 8;
 const URGENT_MS = 30_000;
 
 export default function PrepTimer({
   initialSeconds = 300,
+  username,
   className = "",
   onCompleteSession,
 }: PrepTimerProps) {
   const reduce = useReducedMotion();
   const totalMs = Math.max(1, Math.round(initialSeconds)) * 1000;
+  const storageKey = `generatics_timer_${username || "anonymous"}`;
 
   const [status, setStatus] = useState<Status>("idle");
   const [remainingMs, setRemainingMs] = useState<number | null>(null);
@@ -31,13 +41,47 @@ export default function PrepTimer({
   const endRef = useRef(0);
   const alertedRef = useRef(false);
 
+  // Restore saved timer state from localStorage on mount
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      const raw = localStorage.getItem(storageKey);
+      if (!raw) return;
+      const saved: StoredTimer = JSON.parse(raw);
+
+      if (saved.status === "running" && saved.endTimestamp) {
+        const left = Math.max(0, saved.endTimestamp - Date.now());
+        if (left <= 0) {
+          setStatus("done");
+          setRemainingMs(0);
+          localStorage.setItem(
+            storageKey,
+            JSON.stringify({ status: "done", remainingMs: 0, initialSeconds })
+          );
+        } else {
+          endRef.current = saved.endTimestamp;
+          setRemainingMs(left);
+          setStatus("running");
+        }
+      } else if (saved.status === "paused") {
+        setStatus("paused");
+        setRemainingMs(Math.max(0, saved.remainingMs));
+      } else if (saved.status === "done") {
+        setStatus("done");
+        setRemainingMs(0);
+      }
+    } catch {
+      // LocalStorage parse error: fallback to idle
+    }
+  }, [storageKey, initialSeconds]);
+
   const remaining = remainingMs ?? totalMs;
 
-  // Drift-free ticking: always derive the remaining time from an absolute end timestamp.
+  // Drift-free ticking: derived from absolute end timestamp
   useEffect(() => {
     if (status !== "running") return;
 
-    const id = setInterval(() => {
+    const id = window.setInterval(() => {
       const left = Math.max(0, endRef.current - Date.now());
       setRemainingMs(left);
 
@@ -48,23 +92,98 @@ export default function PrepTimer({
       }
 
       if (left <= 0) {
-        clearInterval(id);
+        window.clearInterval(id);
         soundManager.playTimerEnd();
         setAnnouncement("Waktu persiapan selesai.");
         setStatus("done");
+        if (typeof window !== "undefined") {
+          localStorage.setItem(
+            storageKey,
+            JSON.stringify({ status: "done", remainingMs: 0, initialSeconds })
+          );
+        }
       }
     }, 250);
 
-    return () => clearInterval(id);
-  }, [status, totalMs]);
+    return () => window.clearInterval(id);
+  }, [status, totalMs, storageKey, initialSeconds]);
 
-  const handleStart = () => {
+  const handleStart = (e?: React.MouseEvent) => {
+    e?.stopPropagation();
     soundManager.playTimerAlert();
     alertedRef.current = false;
-    endRef.current = Date.now() + totalMs;
+    const end = Date.now() + totalMs;
+    endRef.current = end;
     setRemainingMs(totalMs);
     setAnnouncement("Waktu persiapan telah dimulai. Timer berjalan terus tanpa jeda.");
     setStatus("running");
+
+    if (typeof window !== "undefined") {
+      localStorage.setItem(
+        storageKey,
+        JSON.stringify({
+          status: "running",
+          remainingMs: totalMs,
+          endTimestamp: end,
+          initialSeconds,
+        })
+      );
+    }
+  };
+
+  const handlePause = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    soundManager.playClick();
+    const currentLeft = Math.max(0, endRef.current - Date.now());
+    setRemainingMs(currentLeft);
+    setStatus("paused");
+    setAnnouncement("Timer persiapan dijeda.");
+
+    if (typeof window !== "undefined") {
+      localStorage.setItem(
+        storageKey,
+        JSON.stringify({
+          status: "paused",
+          remainingMs: currentLeft,
+          initialSeconds,
+        })
+      );
+    }
+  };
+
+  const handleResume = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    soundManager.playClick();
+    const currentLeft = remainingMs ?? totalMs;
+    const end = Date.now() + currentLeft;
+    endRef.current = end;
+    setStatus("running");
+    setAnnouncement("Timer persiapan dilanjutkan.");
+
+    if (typeof window !== "undefined") {
+      localStorage.setItem(
+        storageKey,
+        JSON.stringify({
+          status: "running",
+          remainingMs: currentLeft,
+          endTimestamp: end,
+          initialSeconds,
+        })
+      );
+    }
+  };
+
+  const handleReset = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    soundManager.playClick();
+    alertedRef.current = false;
+    setStatus("idle");
+    setRemainingMs(totalMs);
+    setAnnouncement("Timer persiapan telah direset ke awal.");
+
+    if (typeof window !== "undefined") {
+      localStorage.removeItem(storageKey);
+    }
   };
 
   const secondsLeft = Math.ceil(remaining / 1000);
@@ -83,6 +202,8 @@ export default function PrepTimer({
 
   const chip = isDone
     ? "Selesai"
+    : status === "paused"
+    ? "Dijeda"
     : isUrgent
     ? "30 Detik Terakhir"
     : status === "running"
@@ -168,12 +289,22 @@ export default function PrepTimer({
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-400" aria-hidden />
           <div className="space-y-0.5">
             <strong className="block font-bold text-amber-300">
-              Peringatan: Waktu Persiapan Sedang Berjalan!
+              Waktu Persiapan Sedang Berjalan
             </strong>
             <p className="text-[11px] leading-relaxed text-amber-200/80">
-              Timer berjalan terus tanpa jeda dan tidak dapat diulang demi menjaga objektivitas serta keadilan seleksi debat. Manfaatkan waktu ini untuk menyusun argumen Anda.
+              Gunakan waktu ini untuk menyusun argumen debat Anda secara optimal.
             </p>
           </div>
+        </motion.div>
+      )}
+
+      {status === "paused" && (
+        <motion.div
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="mt-4 flex items-center justify-center gap-2 rounded-xl border border-sky-500/40 bg-sky-500/10 px-4 py-2.5 font-sans text-xs font-semibold text-sky-200"
+        >
+          <span>Timer sedang dijeda. Klik Lanjutkan saat sudah siap.</span>
         </motion.div>
       )}
 
@@ -188,8 +319,8 @@ export default function PrepTimer({
         </motion.div>
       )}
 
-      {/* Controls: Only "Mulai Persiapan" when idle. Selesai button when done. */}
-      <div className="mt-5 flex flex-col items-center justify-center gap-3">
+      {/* Controls: Explicit type="button" and e.stopPropagation() to prevent any parent triggers */}
+      <div className="mt-5 flex flex-wrap items-center justify-center gap-3">
         {status === "idle" && (
           <button
             type="button"
@@ -204,31 +335,86 @@ export default function PrepTimer({
         )}
 
         {status === "running" && (
-          <div className="inline-flex items-center gap-2.5 rounded-full border border-[#FACC15]/40 bg-[#FAF6EB]/5 px-5 py-2 font-sans text-xs font-extrabold uppercase tracking-widest text-[#FACC15] shadow-inner">
-            <span className="relative flex h-2.5 w-2.5">
-              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[#FACC15] opacity-75" />
-              <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-[#FACC15]" />
-            </span>
-            <span>Timer Berjalan Non-Stop</span>
+          <div className="flex flex-wrap items-center justify-center gap-2.5">
+            <div className="inline-flex items-center gap-2 rounded-full border border-[#FACC15]/40 bg-[#FAF6EB]/5 px-4 py-2 font-sans text-xs font-extrabold uppercase tracking-widest text-[#FACC15] shadow-inner">
+              <span className="relative flex h-2.5 w-2.5">
+                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[#FACC15] opacity-75" />
+                <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-[#FACC15]" />
+              </span>
+              <span>Berjalan</span>
+            </div>
+
+            <button
+              type="button"
+              onClick={handlePause}
+              onMouseEnter={() => soundManager.playHover()}
+              aria-label="Jeda timer persiapan"
+              className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-[#FAF6EB]/20 bg-[#FAF6EB]/10 px-4 py-2 font-sans text-xs font-bold uppercase tracking-wider text-[#FAF6EB] transition-colors hover:bg-[#FAF6EB]/20 active:scale-95"
+            >
+              <Pause className="h-3.5 w-3.5 fill-current" />
+              <span>Jeda</span>
+            </button>
           </div>
         )}
 
-        {status === "done" && onCompleteSession && (
-          <motion.button
-            type="button"
-            initial={{ scale: 0.95, opacity: 0 }}
-            animate={{ scale: 1, opacity: 1 }}
-            whileHover={{ scale: 1.03 }}
-            whileTap={{ scale: 0.97 }}
-            onClick={() => {
-              soundManager.playFanfare();
-              onCompleteSession();
-            }}
-            className="btn-gold inline-flex items-center justify-center gap-2 px-6 py-3 font-sans text-sm font-black uppercase tracking-wider shadow-[0_4px_20px_rgba(250,204,21,0.45)]"
-          >
-            <span>Selesai &amp; Lanjut Pengumuman</span>
-            <span aria-hidden>&rarr;</span>
-          </motion.button>
+        {status === "paused" && (
+          <div className="flex flex-wrap items-center justify-center gap-2.5">
+            <button
+              type="button"
+              onClick={handleResume}
+              onMouseEnter={() => soundManager.playHover()}
+              aria-label="Lanjutkan timer persiapan"
+              className="btn-gold inline-flex items-center justify-center gap-2 px-5 py-2.5 font-sans text-xs font-black uppercase tracking-wider"
+            >
+              <Play className="h-3.5 w-3.5 fill-current" />
+              <span>Lanjutkan</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={handleReset}
+              onMouseEnter={() => soundManager.playHover()}
+              aria-label="Reset timer persiapan"
+              className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-[#FAF6EB]/20 bg-[#FAF6EB]/10 px-4 py-2 font-sans text-xs font-bold uppercase tracking-wider text-[#FAF6EB]/80 transition-colors hover:bg-[#FAF6EB]/20 active:scale-95"
+            >
+              <RotateCcw className="h-3.5 w-3.5" />
+              <span>Reset</span>
+            </button>
+          </div>
+        )}
+
+        {isDone && (
+          <div className="flex flex-wrap items-center justify-center gap-2.5">
+            {onCompleteSession && (
+              <motion.button
+                type="button"
+                initial={{ scale: 0.95, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                whileHover={{ scale: 1.03 }}
+                whileTap={{ scale: 0.97 }}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  soundManager.playFanfare();
+                  onCompleteSession();
+                }}
+                className="btn-gold inline-flex items-center justify-center gap-2 px-6 py-3 font-sans text-sm font-black uppercase tracking-wider shadow-[0_4px_20px_rgba(250,204,21,0.45)]"
+              >
+                <span>Selesai &amp; Lanjut Pengumuman</span>
+                <span aria-hidden>&rarr;</span>
+              </motion.button>
+            )}
+
+            <button
+              type="button"
+              onClick={handleReset}
+              onMouseEnter={() => soundManager.playHover()}
+              aria-label="Reset timer persiapan"
+              className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-[#FAF6EB]/20 bg-[#FAF6EB]/10 px-4 py-2 font-sans text-xs font-bold uppercase tracking-wider text-[#FAF6EB]/70 transition-colors hover:bg-[#FAF6EB]/20 active:scale-95"
+            >
+              <RotateCcw className="h-3.5 w-3.5" />
+              <span>Ulangi Timer</span>
+            </button>
+          </div>
         )}
       </div>
 

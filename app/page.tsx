@@ -40,7 +40,7 @@ export default function HomePage() {
         const res = await fetch("/api/auth/me", { cache: "no-store" });
         const data = await res.json();
         if (data.authenticated && data.role === "participant") {
-          window.location.href = "/spin";
+          router.replace("/spin");
           return;
         }
       } catch {
@@ -143,7 +143,7 @@ export default function HomePage() {
       soundManager.playFanfare();
       setStage("warping_to_arena");
       setTimeout(() => {
-        window.location.href = "/spin";
+        router.replace("/spin");
       }, alreadySpun ? 900 : 1400);
     } catch (err: unknown) {
       const offline = err instanceof TypeError;

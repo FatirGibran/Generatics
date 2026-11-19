@@ -30,8 +30,6 @@ interface ThemeItem {
   name: string;
 }
 
-const POLL_CLOSED_MS = 8000;
-
 export default function SpinPage() {
   const router = useRouter();
   const [ready, setReady] = useState(false);
@@ -47,7 +45,7 @@ export default function SpinPage() {
   const aliveRef = useRef(true);
 
   const syncSpinState = useCallback(async (): Promise<"ok" | "unauthorized" | "error"> => {
-    // Never interrupt or overwrite state while the user is actively watching the wheel spin!
+    // Never interrupt or overwrite state while the user is actively watching the wheel spin
     if (isSpinningRef.current) return "ok";
 
     try {
@@ -66,7 +64,27 @@ export default function SpinPage() {
         setUser(p);
 
         if (p.hasSpun) {
-          // Locked in DB: Ensure ResultCard is locked and wheel cannot be shown
+          const spinResult: SpinResult = {
+            themeName: p.assignedThemeName || "Tema Terpilih",
+            motionText: p.assignedMotionText || "Mosi Terpilih",
+            stance: p.assignedStance || "PRO",
+            spunAt: p.spunAt || new Date().toISOString(),
+            participant: {
+              username: p.username,
+              fullName: p.fullName || "",
+              sessionBatch: p.sessionBatch || "",
+            },
+          };
+
+          // Cache in localStorage as safety net
+          if (typeof window !== "undefined") {
+            try {
+              localStorage.setItem(`generatics_result_${p.username}`, JSON.stringify(spinResult));
+            } catch {
+              // Ignore storage errors
+            }
+          }
+
           setResult((prev) => {
             if (
               prev &&
@@ -76,23 +94,13 @@ export default function SpinPage() {
               return prev;
             }
             soundManager.setBGMMood("calm");
-            return {
-              themeName: p.assignedThemeName || "Tema Terpilih",
-              motionText: p.assignedMotionText || "Mosi Terpilih",
-              stance: p.assignedStance || "PRO",
-              spunAt: p.spunAt || new Date().toISOString(),
-              participant: {
-                username: p.username,
-                fullName: p.fullName || "",
-                sessionBatch: p.sessionBatch || "",
-              },
-            };
+            return spinResult;
           });
         } else {
-          // NOT SPUN OR ADMIN HAS RESET:
-          // Clean up any stale closing flags and unlock wheel immediately
+          // NOT SPUN: Clean up any stale closing flags and unlock wheel immediately
           if (typeof window !== "undefined") {
             sessionStorage.removeItem(`generatics_closing_${p.username}`);
+            localStorage.removeItem(`generatics_result_${p.username}`);
           }
           setShowClosing(false);
           setResult((prev) => {
@@ -122,6 +130,10 @@ export default function SpinPage() {
     setReady(false);
     try {
       const meRes = await fetch("/api/auth/me?role=participant", { cache: "no-store" });
+      if (meRes.status === 401) {
+        router.replace("/");
+        return;
+      }
       if (meRes.status >= 500) throw new Error("server");
       const me = await meRes.json();
 
@@ -136,7 +148,7 @@ export default function SpinPage() {
 
       if (p.hasSpun) {
         soundManager.setBGMMood("calm");
-        setResult({
+        const lockedResult: SpinResult = {
           themeName: p.assignedThemeName || "Tema Terpilih",
           motionText: p.assignedMotionText || "Mosi Terpilih",
           stance: p.assignedStance || "PRO",
@@ -146,7 +158,17 @@ export default function SpinPage() {
             fullName: p.fullName || "",
             sessionBatch: p.sessionBatch || "",
           },
-        });
+        };
+
+        if (typeof window !== "undefined") {
+          try {
+            localStorage.setItem(`generatics_result_${p.username}`, JSON.stringify(lockedResult));
+          } catch {
+            // Ignore storage errors
+          }
+        }
+
+        setResult(lockedResult);
       } else {
         soundManager.setBGMMood("curious");
         setResult(null);
@@ -170,24 +192,31 @@ export default function SpinPage() {
     }
   }, [router, syncSpinState]);
 
+  // Strict one-time mount check: prevents unnecessary re-triggers and redirect bouncing
   useEffect(() => {
     aliveRef.current = true;
     load();
     return () => {
       aliveRef.current = false;
     };
-  }, [load]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
-  // Real-time synchronization loop: updates lock status, admin resets, and session toggle every 4 seconds
+  // Real-time synchronization loop: strictly runs ONLY if the participant has NOT spun and is NOT spinning
+  // Once the participant has spun, polling is strictly terminated to prevent state overwriting
   useEffect(() => {
-    if (!ready || loadError || isSpinning) return;
+    if (!ready || loadError || isSpinning || user?.hasSpun || result) {
+      return;
+    }
+
     const intervalId = window.setInterval(() => {
-      if (!isSpinningRef.current) {
+      if (!isSpinningRef.current && !user?.hasSpun && !result) {
         syncSpinState().catch(() => undefined);
       }
     }, 4000);
+
     return () => window.clearInterval(intervalId);
-  }, [ready, loadError, isSpinning, syncSpinState]);
+  }, [ready, loadError, isSpinning, user?.hasSpun, result, syncSpinState]);
 
   const handleLogout = async () => {
     try {
@@ -207,6 +236,27 @@ export default function SpinPage() {
     setIsSpinning(false);
     isSpinningRef.current = false;
     soundManager.setBGMMood("calm");
+
+    const finalResult: SpinResult = {
+      ...spin,
+      participant: {
+        username: user?.username || spin.participant.username,
+        fullName: user?.fullName || spin.participant.fullName,
+        sessionBatch: user?.sessionBatch || spin.participant.sessionBatch,
+      },
+    };
+
+    if (typeof window !== "undefined" && finalResult.participant.username) {
+      try {
+        localStorage.setItem(
+          `generatics_result_${finalResult.participant.username}`,
+          JSON.stringify(finalResult)
+        );
+      } catch {
+        // Ignore storage errors
+      }
+    }
+
     setUser((prev) =>
       prev
         ? {
@@ -219,14 +269,8 @@ export default function SpinPage() {
           }
         : prev
     );
-    setResult({
-      ...spin,
-      participant: {
-        username: user?.username || spin.participant.username,
-        fullName: user?.fullName || spin.participant.fullName,
-        sessionBatch: user?.sessionBatch || spin.participant.sessionBatch,
-      },
-    });
+
+    setResult(finalResult);
   };
 
   // Restore saved closing screen state ONLY IF participant has legitimately spun
@@ -264,7 +308,7 @@ export default function SpinPage() {
       }
     : null;
 
-  // While spinning, activeResult MUST be null to prevent premature unmounting of SpinWheel
+  // Active result resolution with safety fallback to localStorage
   const activeResult: SpinResult | null = isSpinning
     ? null
     : result ||
@@ -337,6 +381,7 @@ export default function SpinPage() {
               >
                 <PrepTimer
                   initialSeconds={prepDuration}
+                  username={user?.username}
                   onCompleteSession={handleOpenClosing}
                 />
               </ResultCard>

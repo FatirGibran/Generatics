@@ -57,6 +57,10 @@ export async function GET(req: NextRequest) {
         assignedThemeName: participant.assignedMotion?.theme?.name || null,
         assignedStance: participant.assignedStance,
         spunAt: participant.spunAt ? participant.spunAt.toISOString() : null,
+        // Standardized aliases
+        motionText: participant.assignedMotion?.motionText || null,
+        themeName: participant.assignedMotion?.theme?.name || null,
+        stance: participant.assignedStance,
       },
     });
   } catch (error: unknown) {
