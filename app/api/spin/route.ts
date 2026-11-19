@@ -96,6 +96,11 @@ export async function POST() {
           motionText: initialParticipant.assignedMotion?.motionText || "Mosi Terpilih",
           stance: initialParticipant.assignedStance,
           spunAt: initialParticipant.spunAt ? initialParticipant.spunAt.toISOString() : new Date().toISOString(),
+          participant: {
+            username: initialParticipant.username,
+            fullName: initialParticipant.fullName,
+            sessionBatch: initialParticipant.sessionBatch,
+          },
         },
         { status: 409 }
       );

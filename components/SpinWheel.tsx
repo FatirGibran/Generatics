@@ -18,6 +18,7 @@ import { SpinResult, Stance } from "@/lib/types";
 interface SpinWheelProps {
   themes: { id: string; name: string }[];
   isSpinOpen: boolean;
+  hasSpun?: boolean;
   onSpinComplete: (result: SpinResult) => void;
   /** Called when the server says the session is no longer valid (HTTP 401). */
   onUnauthorized?: () => void;
@@ -108,6 +109,7 @@ function toResult(data: SpinApiData): SpinResult {
 export default function SpinWheel({
   themes,
   isSpinOpen,
+  hasSpun = false,
   onSpinComplete,
   onUnauthorized,
 }: SpinWheelProps) {
@@ -310,7 +312,7 @@ export default function SpinWheel({
   };
 
   const handleSpin = async () => {
-    if (busyRef.current || !isSpinOpen) return;
+    if (busyRef.current || !isSpinOpen || hasSpun) return;
     busyRef.current = true;
     setError(null);
     setIsSpinning(true);
@@ -450,7 +452,7 @@ export default function SpinWheel({
     []
   );
 
-  const canSpin = isSpinOpen && !isSpinning;
+  const canSpin = isSpinOpen && !isSpinning && !hasSpun;
 
   const lampLit = (side: Stance) => {
     if (lampState === "flash") return flashLamp === side;
@@ -665,7 +667,13 @@ export default function SpinWheel({
             className="btn-gold relative inline-flex items-center justify-center gap-2.5 px-6 py-4 text-sm font-black uppercase tracking-wider sm:px-9 sm:text-base"
           >
             <Sparkles className="h-5 w-5 fill-current" aria-hidden />
-            <span>{isSpinning ? "Memutar…" : "Spin Tema, Mosi & Posisi"}</span>
+            <span>
+              {hasSpun
+                ? "Kesempatan Spin Telah Digunakan"
+                : isSpinning
+                ? "Memutar…"
+                : "Spin Tema, Mosi & Posisi"}
+            </span>
             <Sparkles className="h-5 w-5 fill-current" aria-hidden />
           </motion.button>
 
@@ -691,7 +699,9 @@ export default function SpinWheel({
         </motion.div>
 
         <p className="mt-3 text-center font-display text-sm italic text-[#FAF6EB]/70">
-          hanya 1 kali spin &mdash; hasilnya terkunci selamanya
+          {hasSpun
+            ? "Posisimu sudah terkunci secara resmi"
+            : "hanya 1 kali spin \u2014 hasilnya terkunci selamanya"}
         </p>
       </div>
     </div>

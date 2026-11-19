@@ -193,7 +193,18 @@ export default function SpinPage() {
 
   const handleSpinComplete = (spin: SpinResult) => {
     soundManager.setBGMMood("calm");
-    setUser((prev) => (prev ? { ...prev, hasSpun: true } : prev));
+    setUser((prev) =>
+      prev
+        ? {
+            ...prev,
+            hasSpun: true,
+            assignedMotionText: spin.motionText,
+            assignedThemeName: spin.themeName,
+            assignedStance: spin.stance,
+            spunAt: spin.spunAt,
+          }
+        : prev
+    );
     setResult({
       ...spin,
       participant: {
@@ -239,13 +250,35 @@ export default function SpinPage() {
       }
     : null;
 
+  const activeResult: SpinResult | null =
+    result ||
+    (user?.hasSpun
+      ? {
+          themeName: user.assignedThemeName || "Tema Terpilih",
+          motionText: user.assignedMotionText || "Mosi Terpilih",
+          stance: user.assignedStance || "PRO",
+          spunAt: user.spunAt || new Date().toISOString(),
+          participant: {
+            username: user.username,
+            fullName: user.fullName || "",
+            sessionBatch: user.sessionBatch || "",
+          },
+        }
+      : null);
+
   return (
     <div className="flex min-h-screen flex-1 flex-col">
       <Navbar user={navUser} onLogout={handleLogout} />
 
       <main className="relative z-10 mx-auto flex w-full max-w-3xl flex-1 flex-col items-center px-4 py-8 md:py-12">
         {!ready ? (
-          <StarLoader label="Menyiapkan arena spin…" />
+          <StarLoader
+            label={
+              user?.hasSpun
+                ? "Membuka kartu mosi & posisi debatmu…"
+                : "Menyiapkan arena spin…"
+            }
+          />
         ) : loadError ? (
           <div className="paper mx-auto mt-10 max-w-sm rounded-2xl p-6 text-center">
             <h1 className="font-display text-xl font-semibold">Ups, arena tertutup awan</h1>
@@ -259,13 +292,13 @@ export default function SpinPage() {
               Coba lagi
             </button>
           </div>
-        ) : result ? (
+        ) : activeResult ? (
           showClosing ? (
             <PostDebateScreen
               user={user}
-              themeName={result.themeName}
-              motionText={result.motionText}
-              stance={result.stance}
+              themeName={activeResult.themeName}
+              motionText={activeResult.motionText}
+              stance={activeResult.stance}
               onBackToCard={handleBackToCard}
               onLogout={handleLogout}
             />
@@ -280,11 +313,11 @@ export default function SpinPage() {
               </motion.p>
 
               <ResultCard
-                themeName={result.themeName}
-                motionText={result.motionText}
-                stance={result.stance}
-                spunAt={result.spunAt}
-                participant={result.participant}
+                themeName={activeResult.themeName}
+                motionText={activeResult.motionText}
+                stance={activeResult.stance}
+                spunAt={activeResult.spunAt}
+                participant={activeResult.participant}
               >
                 <PrepTimer
                   initialSeconds={prepDuration}
@@ -333,6 +366,7 @@ export default function SpinPage() {
             <SpinWheel
               themes={themes}
               isSpinOpen={isSpinOpen}
+              hasSpun={Boolean(user?.hasSpun)}
               onSpinComplete={handleSpinComplete}
               onUnauthorized={() => router.replace("/")}
             />

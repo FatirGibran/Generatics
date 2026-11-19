@@ -109,119 +109,111 @@ CREATE TABLE IF NOT EXISTS "SystemSetting" (
 );
 `;
 
+let walInitPromise: Promise<void> | null = null;
+
 /**
  * Configure SQLite WAL mode and busy timeout for concurrent safety.
  * Also self-heals by creating tables and seeding admin if database is newly initialized.
  */
-export async function ensurePrismaWAL() {
+export async function ensurePrismaWAL(): Promise<void> {
   if (globalForPrisma.prismaWalConfigured) return;
-  try {
-    await prisma.$queryRawUnsafe("PRAGMA journal_mode = WAL;");
-    await prisma.$queryRawUnsafe("PRAGMA busy_timeout = 5000;");
+  if (walInitPromise) return walInitPromise;
 
-    // Self-healing check: verify if Admin table exists
-    const adminCount = await prisma.admin.count().catch(async () => {
-      // Tables don't exist yet, execute DDL schema creation
-      const statements = INIT_SCHEMA_SQL.split(";");
-      for (const st of statements) {
-        const q = st.trim();
-        if (q) await prisma.$executeRawUnsafe(q);
-      }
-      return 0;
-    });
+  walInitPromise = (async () => {
+    try {
+      await prisma.$queryRawUnsafe("PRAGMA journal_mode = WAL;");
+      await prisma.$queryRawUnsafe("PRAGMA busy_timeout = 5000;");
 
-    if (adminCount === 0) {
-      // Seed default admin
-      const defaultPassword = process.env.DEFAULT_ADMIN_PASSWORD || "generatics2026";
-      const hash = await bcrypt.hash(defaultPassword, 10);
-      await prisma.admin.upsert({
-        where: { username: "admin" },
-        update: {},
-        create: {
-          id: "admin-default",
-          username: "admin",
-          passwordHash: hash,
-        },
-      });
-
-      // Seed system settings
-      await prisma.systemSetting.upsert({
-        where: { id: 1 },
-        update: {},
-        create: {
-          id: 1,
-          isSpinOpen: true,
-          randomMode: "BALANCED",
-          prepDurationSeconds: 300,
-        },
-      });
-
-      // Seed themes and motions from seed data
-      for (const t of SEED_THEMES) {
-        let theme = await prisma.theme.findFirst({ where: { name: t.name } });
-        if (!theme) {
-          theme = await prisma.theme.create({
-            data: {
-              name: t.name,
-              description: t.description,
-              isActive: true,
-            },
-          });
+      // Self-healing check: verify if Admin table exists
+      const adminCount = await prisma.admin.count().catch(async () => {
+        // Tables don't exist yet, execute DDL schema creation
+        const statements = INIT_SCHEMA_SQL.split(";");
+        for (const st of statements) {
+          const q = st.trim();
+          if (q) await prisma.$executeRawUnsafe(q);
         }
-        for (const m of t.motions) {
-          const existingMotion = await prisma.motion.findFirst({
-            where: { themeId: theme.id, motionText: m.motionText },
-          });
-          if (!existingMotion) {
-            await prisma.motion.create({
+        return 0;
+      });
+
+      if (adminCount === 0) {
+        // Seed default admin
+        const defaultPassword = process.env.DEFAULT_ADMIN_PASSWORD || "generatics2026";
+        const hash = await bcrypt.hash(defaultPassword, 10);
+        await prisma.admin.upsert({
+          where: { username: "admin" },
+          update: {},
+          create: {
+            id: "admin-default",
+            username: "admin",
+            passwordHash: hash,
+          },
+        });
+
+        // Seed system settings
+        await prisma.systemSetting.upsert({
+          where: { id: 1 },
+          update: {},
+          create: {
+            id: 1,
+            isSpinOpen: true,
+            randomMode: "BALANCED",
+            prepDurationSeconds: 300,
+          },
+        });
+
+        // Seed themes and motions from seed data
+        for (const t of SEED_THEMES) {
+          let theme = await prisma.theme.findFirst({ where: { name: t.name } });
+          if (!theme) {
+            theme = await prisma.theme.create({
               data: {
-                themeId: theme.id,
-                motionText: m.motionText,
-                maxUsage: m.maxUsage ?? 10,
-                usedCount: 0,
+                name: t.name,
+                description: t.description,
                 isActive: true,
               },
             });
           }
+          for (const m of t.motions) {
+            const existingMotion = await prisma.motion.findFirst({
+              where: { themeId: theme.id, motionText: m.motionText },
+            });
+            if (!existingMotion) {
+              await prisma.motion.create({
+                data: {
+                  themeId: theme.id,
+                  motionText: m.motionText,
+                  maxUsage: m.maxUsage ?? 10,
+                  usedCount: 0,
+                  isActive: true,
+                },
+              });
+            }
+          }
+        }
+
+        // Seed default participants
+        for (const p of SEED_PARTICIPANTS) {
+          await prisma.participant.upsert({
+            where: { username: p.username },
+            update: {},
+            create: {
+              username: p.username,
+              fullName: p.fullName,
+              accessToken: p.accessToken,
+              sessionBatch: p.sessionBatch,
+              hasSpun: false,
+            },
+          });
         }
       }
 
-      // Seed default participants
-      for (const p of SEED_PARTICIPANTS) {
-        await prisma.participant.upsert({
-          where: { username: p.username },
-          update: {},
-          create: {
-            username: p.username,
-            fullName: p.fullName,
-            accessToken: p.accessToken,
-            sessionBatch: p.sessionBatch,
-            hasSpun: false,
-          },
-        });
-      }
-    } else {
-      // Ensure essential seed participants always exist without overwriting their spin status
-      for (const p of SEED_PARTICIPANTS) {
-        await prisma.participant.upsert({
-          where: { username: p.username },
-          update: {},
-          create: {
-            username: p.username,
-            fullName: p.fullName,
-            accessToken: p.accessToken,
-            sessionBatch: p.sessionBatch,
-            hasSpun: false,
-          },
-        }).catch(() => {});
-      }
+      globalForPrisma.prismaWalConfigured = true;
+    } catch (err) {
+      console.error("Warning: Failed to set SQLite WAL/busy_timeout:", err);
+    } finally {
+      walInitPromise = null;
     }
+  })();
 
-    globalForPrisma.prismaWalConfigured = true;
-  } catch (err) {
-    console.error("Warning: Failed to set SQLite WAL/busy_timeout:", err);
-  }
+  return walInitPromise;
 }
-
-// Automatically trigger WAL configuration on module import
-ensurePrismaWAL().catch(() => {});

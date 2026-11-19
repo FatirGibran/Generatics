@@ -28,6 +28,7 @@ export default function HomePage() {
   const [token, setToken] = useState("");
   const [showToken, setShowToken] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [isAlreadySpun, setIsAlreadySpun] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [invalid, setInvalid] = useState<FieldErrors>({ username: false, token: false });
 
@@ -62,7 +63,7 @@ export default function HomePage() {
   };
 
   const handleStartGame = () => {
-    soundManager.playSpinLaunch();
+    soundManager.playClick();
     soundManager.startBGM();
     setStage("login");
   };
@@ -103,7 +104,15 @@ export default function HomePage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ username: cleanUser, accessToken: cleanToken }),
       });
-      const data: { error?: string } = await res.json().catch(() => ({}));
+      const data: {
+        error?: string;
+        participant?: {
+          username: string;
+          fullName: string;
+          sessionBatch: string;
+          hasSpun: boolean;
+        };
+      } = await res.json().catch(() => ({}));
 
       if (!res.ok) {
         if (res.status === 404) {
@@ -127,12 +136,15 @@ export default function HomePage() {
         return;
       }
 
+      const alreadySpun = Boolean(data.participant?.hasSpun);
+      setIsAlreadySpun(alreadySpun);
+
       // Success: Play cosmic portal warp animation into the debate arena!
       soundManager.playFanfare();
       setStage("warping_to_arena");
       setTimeout(() => {
         window.location.href = "/spin";
-      }, 1400);
+      }, alreadySpun ? 900 : 1400);
     } catch (err: unknown) {
       const offline = err instanceof TypeError;
       fail(
@@ -218,7 +230,9 @@ export default function HomePage() {
                 transition={{ delay: 0.6 }}
                 className="mt-3 font-sans text-xs tracking-widest uppercase text-[#FAF6EB]/60"
               >
-                Menyiapkan Arena Undian Mosi &amp; Posisi…
+                {isAlreadySpun
+                  ? "Membuka Kartu Mosi & Posisi Terkuncimu…"
+                  : "Menyiapkan Arena Undian Mosi & Posisi…"}
               </motion.p>
             </motion.div>
           ) : stage === "intro" ? (

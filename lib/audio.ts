@@ -18,6 +18,48 @@ export interface AudioTrack {
 
 export const PLAYLIST: AudioTrack[] = [
   {
+    id: "stuck-lany",
+    title: "Stuck",
+    artist: "LANY",
+    genre: "Pop / Alternative",
+    src: "/audio/lany-stuck.m4a",
+  },
+  {
+    id: "purple-olivia-rodrigo",
+    title: "Purple",
+    artist: "Olivia Rodrigo",
+    genre: "Pop / Ballad",
+    src: "/audio/olivia-rodrigo-purple.m4a",
+  },
+  {
+    id: "bm-thats-what-i-like",
+    title: "That's What I Like (Instrumental)",
+    artist: "Bruno Mars",
+    genre: "R&B / Funk Instrumental",
+    src: "/audio/bruno-mars-thats-what-i-like.m4a",
+  },
+  {
+    id: "bm-versace",
+    title: "Versace on the Floor (Instrumental)",
+    artist: "Bruno Mars",
+    genre: "Slow R&B Instrumental",
+    src: "/audio/bruno-mars-versace-on-the-floor.m4a",
+  },
+  {
+    id: "bm-just-the-way-you-are",
+    title: "Just the Way You Are (Instrumental)",
+    artist: "Bruno Mars",
+    genre: "Pop / Ballad Instrumental",
+    src: "/audio/bruno-mars-just-the-way-you-are.m4a",
+  },
+  {
+    id: "bm-talking-to-the-moon",
+    title: "Talking to the Moon (Instrumental)",
+    artist: "Bruno Mars",
+    genre: "Piano / Ballad Instrumental",
+    src: "/audio/bruno-mars-talking-to-the-moon.m4a",
+  },
+  {
     id: "every-summertime",
     title: "Every Summertime",
     artist: "NIKI",
@@ -54,53 +96,11 @@ export const PLAYLIST: AudioTrack[] = [
   },
 ];
 
-// NIKI - "Every Summertime" Synth Chord Progression & Melody Sequence (Fallback Engine)
-const SUMMERTIME_BEAT_MS = 680;
-const SUMMERTIME_CHORDS = [
-  { root: 73.42, notes: [146.83, 185.0, 220.0, 277.18, 369.99] },
-  { root: 61.74, notes: [123.47, 146.83, 185.0, 220.0, 293.66] },
-  { root: 82.41, notes: [164.81, 196.0, 246.94, 293.66, 392.0] },
-  { root: 55.0, notes: [110.0, 196.0, 277.18, 329.63, 440.0] },
-];
-
-const SUMMERTIME_HOOK = [
-  { f: 369.99, beat: 0.0, dur: 0.4 },
-  { f: 440.0, beat: 0.5, dur: 0.4 },
-  { f: 369.99, beat: 1.0, dur: 0.35 },
-  { f: 329.63, beat: 1.5, dur: 0.35 },
-  { f: 293.66, beat: 2.0, dur: 0.4 },
-  { f: 329.63, beat: 2.5, dur: 0.35 },
-  { f: 369.99, beat: 3.0, dur: 0.7 },
-  { f: 369.99, beat: 4.0, dur: 0.4 },
-  { f: 440.0, beat: 4.5, dur: 0.4 },
-  { f: 493.88, beat: 5.0, dur: 0.5 },
-  { f: 440.0, beat: 5.6, dur: 0.35 },
-  { f: 369.99, beat: 6.1, dur: 0.35 },
-  { f: 329.63, beat: 6.6, dur: 0.35 },
-  { f: 293.66, beat: 7.1, dur: 0.7 },
-  { f: 293.66, beat: 8.0, dur: 0.35 },
-  { f: 329.63, beat: 8.5, dur: 0.35 },
-  { f: 369.99, beat: 9.0, dur: 0.4 },
-  { f: 440.0, beat: 9.5, dur: 0.45 },
-  { f: 369.99, beat: 10.1, dur: 0.35 },
-  { f: 329.63, beat: 10.6, dur: 0.35 },
-  { f: 293.66, beat: 11.1, dur: 0.6 },
-  { f: 440.0, beat: 12.0, dur: 0.4 },
-  { f: 493.88, beat: 12.5, dur: 0.4 },
-  { f: 554.37, beat: 13.0, dur: 0.45 },
-  { f: 587.33, beat: 13.6, dur: 0.5 },
-  { f: 554.37, beat: 14.3, dur: 0.35 },
-  { f: 493.88, beat: 14.8, dur: 0.35 },
-  { f: 440.0, beat: 15.3, dur: 0.6 },
-];
-
 class SoundManager {
   private ctx: AudioContext | null = null;
   private isMuted = false;
   private loaded = false;
   private bgmPlaying = false;
-  private bgmTimer: ReturnType<typeof setInterval> | null = null;
-  private bgmGain: GainNode | null = null;
   private sfxGain: GainNode | null = null;
   private ducked = false;
   private mood: BGMMood = "summertime";
@@ -111,8 +111,9 @@ class SoundManager {
 
   // Audio file element for real audio streaming
   private audioElement: HTMLAudioElement | null = null;
-  private audioFileAvailable = false;
   private audioInitialized = false;
+  private bgmPausedForSpin = false;
+  private fadeInterval: ReturnType<typeof setInterval> | null = null;
 
   private loadPersisted() {
     if (this.loaded || typeof window === "undefined") return;
@@ -125,12 +126,52 @@ class SoundManager {
         if (found >= 0) this.currentTrackIdx = found;
       }
     } catch {
-      // storage unavailable
+      // Storage unavailable
     }
   }
 
   private bgmTarget() {
     return this.isMuted ? 0 : this.ducked ? BGM_DUCKED : BGM_VOLUME;
+  }
+
+  private clearFade() {
+    if (this.fadeInterval) {
+      clearInterval(this.fadeInterval);
+      this.fadeInterval = null;
+    }
+  }
+
+  private fadeAudioElement(targetVol: number, durationMs: number, onComplete?: () => void) {
+    this.clearFade();
+    if (!this.audioElement) {
+      onComplete?.();
+      return;
+    }
+    const audio = this.audioElement;
+    const startVol = audio.volume;
+    const diff = targetVol - startVol;
+    if (Math.abs(diff) < 0.005 || durationMs <= 0) {
+      audio.volume = Math.max(0, Math.min(1, targetVol));
+      onComplete?.();
+      return;
+    }
+
+    const steps = Math.max(6, Math.floor(durationMs / 25));
+    const stepTime = durationMs / steps;
+    let currentStep = 0;
+
+    this.fadeInterval = setInterval(() => {
+      currentStep++;
+      const progress = currentStep / steps;
+      const nextVol = startVol + diff * progress;
+      audio.volume = Math.max(0, Math.min(1, nextVol));
+
+      if (currentStep >= steps) {
+        this.clearFade();
+        audio.volume = Math.max(0, Math.min(1, targetVol));
+        onComplete?.();
+      }
+    }, stepTime);
   }
 
   private ramp(node: GainNode | null, value: number, tc = 0.08) {
@@ -152,10 +193,6 @@ class SoundManager {
       this.sfxGain = this.ctx.createGain();
       this.sfxGain.gain.value = this.isMuted ? 0 : SFX_VOLUME;
       this.sfxGain.connect(this.ctx.destination);
-
-      this.bgmGain = this.ctx.createGain();
-      this.bgmGain.gain.value = this.bgmTarget();
-      this.bgmGain.connect(this.ctx.destination);
     }
     if (this.ctx.state === "suspended") {
       void this.ctx.resume().catch(() => undefined);
@@ -171,29 +208,26 @@ class SoundManager {
       const audio = new Audio();
       audio.preload = "auto";
       audio.volume = this.bgmTarget();
-      audio.loop = true;
       audio.src = this.getCurrentTrack().src;
 
       audio.addEventListener("canplaythrough", () => {
-        this.audioFileAvailable = true;
-        if (this.bgmPlaying && !this.isMuted && audio.paused) {
-          this.stopSynthBGM();
+        if (this.bgmPlaying && !this.isMuted && audio.paused && !this.bgmPausedForSpin) {
           void audio.play().catch(() => undefined);
         }
       });
 
+      audio.addEventListener("ended", () => {
+        this.nextTrack();
+      });
+
       audio.addEventListener("error", () => {
-        // Fallback to synth if file fails
-        this.audioFileAvailable = false;
-        if (this.bgmPlaying && !this.isMuted) {
-          this.startSynthBGM();
-        }
+        // Audio load error handled silently
       });
 
       this.audioElement = audio;
       audio.load();
     } catch {
-      this.audioFileAvailable = false;
+      // Audio element not supported
     }
   }
 
@@ -235,27 +269,26 @@ class SoundManager {
     try {
       window.localStorage.setItem(TRACK_STORAGE_KEY, track.id);
     } catch {
-      // ignore
+      // Storage unavailable
     }
 
     this.trackListeners.forEach((cb) => {
       try {
         cb(track);
       } catch {
-        // ignore
+        // Ignore listener error
       }
     });
 
     if (this.audioElement) {
+      this.clearFade();
       this.audioElement.src = track.src;
       this.audioElement.volume = this.bgmTarget();
-      this.audioElement.loop = true;
       this.audioElement.load();
       if (!this.isMuted) {
         this.bgmPlaying = true;
-        this.stopSynthBGM();
         void this.audioElement.play().catch(() => {
-          this.startSynthBGM();
+          this.bgmPlaying = false;
         });
       }
     } else {
@@ -277,22 +310,20 @@ class SoundManager {
     try {
       window.localStorage.setItem(STORAGE_KEY, muted ? "1" : "0");
     } catch {
-      // ignore
+      // Storage unavailable
     }
 
     if (muted) {
+      this.clearFade();
       if (this.audioElement) {
         this.audioElement.pause();
         this.audioElement.volume = 0;
       }
       this.ramp(this.sfxGain, 0, 0.03);
-      this.ramp(this.bgmGain, 0, 0.03);
-      this.stopSynthBGM();
       this.bgmPlaying = false;
     } else {
       this.initContext();
       this.ramp(this.sfxGain, SFX_VOLUME, 0.03);
-      this.ramp(this.bgmGain, this.bgmTarget(), 0.1);
       this.startBGM(true);
     }
   }
@@ -307,31 +338,41 @@ class SoundManager {
     return this.isMuted;
   }
 
-  private bgmPausedForSpin = false;
-
   public pauseBGMForSpin() {
     this.bgmPausedForSpin = true;
     if (this.audioElement) {
-      this.audioElement.pause();
+      this.fadeAudioElement(0, 150, () => {
+        if (this.bgmPausedForSpin && this.audioElement) {
+          this.audioElement.pause();
+        }
+      });
     }
-    this.stopSynthBGM();
     this.bgmPlaying = false;
   }
 
   public resumeBGMAfterSpin() {
-    if (this.bgmPausedForSpin) {
-      this.bgmPausedForSpin = false;
-      if (!this.isMuted) {
-        this.startBGM();
+    if (!this.bgmPausedForSpin) return;
+    this.bgmPausedForSpin = false;
+    if (this.isMuted) return;
+
+    if (this.audioElement) {
+      this.audioElement.volume = 0;
+      const playPromise = this.audioElement.play();
+      if (playPromise !== undefined) {
+        playPromise
+          .then(() => {
+            this.bgmPlaying = true;
+            this.fadeAudioElement(this.bgmTarget(), 800);
+          })
+          .catch(() => undefined);
       }
     }
   }
 
   public duckBGM(ducked: boolean) {
-    if (ducked) {
-      this.pauseBGMForSpin();
-    } else {
-      this.resumeBGMAfterSpin();
+    this.ducked = ducked;
+    if (this.audioElement && this.bgmPlaying && !this.isMuted && !this.bgmPausedForSpin) {
+      this.fadeAudioElement(this.bgmTarget(), ducked ? 200 : 500);
     }
   }
 
@@ -368,25 +409,6 @@ class SoundManager {
     };
   }
 
-  private playRhodesChord(notes: number[], start: number, dur: number) {
-    if (!this.ctx || !this.bgmGain) return;
-    notes.forEach((f) => {
-      this.blip("sine", f, start, dur, 0.038, this.bgmGain!);
-      this.blip("triangle", f * 2, start, dur * 0.6, 0.012, this.bgmGain!);
-    });
-  }
-
-  private playBassNote(freq: number, start: number, dur: number) {
-    if (!this.ctx || !this.bgmGain) return;
-    this.blip("triangle", freq, start, dur, 0.07, this.bgmGain!);
-    this.blip("sine", freq * 0.5, start, dur * 0.8, 0.05, this.bgmGain!);
-  }
-
-  private playSnap(start: number) {
-    if (!this.ctx || !this.bgmGain) return;
-    this.blip("triangle", 1200, start, 0.04, 0.025, this.bgmGain!, 400);
-  }
-
   private sfx(fn: (ctx: AudioContext, dest: GainNode, now: number) => void) {
     if (this.getMuted()) return;
     try {
@@ -410,7 +432,6 @@ class SoundManager {
 
   public playSpinLaunch() {
     this.sfx((ctx, dest, now) => {
-      // 1. Energetic launch whoosh with lowpass filter sweep
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
       const filter = ctx.createBiquadFilter();
@@ -432,7 +453,6 @@ class SoundManager {
       osc.start(now);
       osc.stop(now + 0.74);
 
-      // 2. Rising cosmic chime sparkle
       [880, 1174.66, 1479.98, 1760, 2349.32].forEach((f, i) => {
         this.blip("triangle", f, now + 0.08 + i * 0.08, 0.28, 0.12, dest);
       });
@@ -443,7 +463,7 @@ class SoundManager {
     this.sfx((ctx, dest, now) => {
       const f = 620 * Math.max(0.6, Math.min(2.0, pitchMultiplier));
 
-      // 1. Crisp transient snap (mechanical ratchet peg)
+      // Mechanical ratchet peg snap
       const click = ctx.createOscillator();
       const clickGain = ctx.createGain();
       click.type = "triangle";
@@ -456,7 +476,7 @@ class SoundManager {
       click.start(now);
       click.stop(now + 0.04);
 
-      // 2. Resonant wood-knock ping
+      // Resonant wood-knock ping
       const wood = ctx.createOscillator();
       const woodGain = ctx.createGain();
       wood.type = "sine";
@@ -508,83 +528,27 @@ class SoundManager {
     }
 
     if (this.audioElement) {
-      this.audioElement.volume = this.bgmTarget();
       if (force || this.audioElement.paused || !this.bgmPlaying) {
         this.bgmPlaying = true;
+        this.audioElement.volume = this.bgmTarget();
         const playPromise = this.audioElement.play();
         if (playPromise !== undefined) {
           playPromise.catch(() => {
-            this.startSynthBGM();
+            // Autoplay blocked by browser policy; wait silently for user gesture
+            this.bgmPlaying = false;
           });
         }
       }
-      return;
-    }
-
-    this.startSynthBGM();
-  }
-
-  private startSynthBGM() {
-    try {
-      this.initContext();
-      if (!this.ctx || !this.bgmGain) return;
-
-      this.bgmPlaying = true;
-      this.ramp(this.bgmGain, this.bgmTarget(), 0.15);
-
-      const beatSec = SUMMERTIME_BEAT_MS / 1000;
-      const totalBeats = 16;
-      let currentBeat = 0;
-
-      this.bgmTimer = setInterval(() => {
-        if (!this.bgmPlaying || this.isMuted || !this.ctx || !this.bgmGain) return;
-        if (this.ctx.state === "suspended") return;
-
-        const now = this.ctx.currentTime;
-        const beatInLoop = currentBeat % totalBeats;
-
-        if (beatInLoop % 4 === 0) {
-          const barIdx = Math.floor(beatInLoop / 4);
-          const chord = SUMMERTIME_CHORDS[barIdx % SUMMERTIME_CHORDS.length];
-          this.playRhodesChord(chord.notes, now, beatSec * 3.6);
-          this.playBassNote(chord.root, now, beatSec * 1.8);
-        }
-
-        if (beatInLoop % 4 === 2) {
-          const barIdx = Math.floor(beatInLoop / 4);
-          const chord = SUMMERTIME_CHORDS[barIdx % SUMMERTIME_CHORDS.length];
-          this.playBassNote(chord.root, now, beatSec * 1.4);
-        }
-
-        if (beatInLoop % 2 === 1) {
-          this.playSnap(now);
-        }
-
-        const matchingNote = SUMMERTIME_HOOK.find(
-          (h) => Math.abs(h.beat - beatInLoop) < 0.25
-        );
-        if (matchingNote) {
-          this.blip("sine", matchingNote.f, now, matchingNote.dur, 0.055, this.bgmGain);
-          this.blip("triangle", matchingNote.f, now, matchingNote.dur * 0.7, 0.02, this.bgmGain);
-        }
-
-        currentBeat++;
-      }, SUMMERTIME_BEAT_MS);
-    } catch {
-      // Ignore
     }
   }
 
-  private stopSynthBGM() {
-    if (this.bgmTimer) {
-      clearInterval(this.bgmTimer);
-      this.bgmTimer = null;
-    }
+  public stopSynthBGM() {
+    // Kept as no-op for backward compatibility
   }
 
   public stopBGM() {
+    this.clearFade();
     this.bgmPlaying = false;
-    this.stopSynthBGM();
     if (this.audioElement) {
       this.audioElement.pause();
     }

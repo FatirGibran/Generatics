@@ -36,11 +36,14 @@ export default function AudioToggle({ className = "", showTrackLabel = true }: A
       if (!soundManager.getMuted()) {
         soundManager.startBGM();
       }
+      window.removeEventListener("pointerdown", unlockAudio);
+      window.removeEventListener("click", unlockAudio);
+      window.removeEventListener("keydown", unlockAudio);
     };
 
-    window.addEventListener("pointerdown", unlockAudio, { passive: true });
-    window.addEventListener("click", unlockAudio, { passive: true });
-    window.addEventListener("keydown", unlockAudio, { passive: true });
+    window.addEventListener("pointerdown", unlockAudio, { passive: true, once: true });
+    window.addEventListener("click", unlockAudio, { passive: true, once: true });
+    window.addEventListener("keydown", unlockAudio, { passive: true, once: true });
 
     // Also attempt autoplay immediately if browser allows it
     if (!soundManager.getMuted()) {
