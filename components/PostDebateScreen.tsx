@@ -7,7 +7,6 @@ import confetti from "canvas-confetti";
 import {
   Sparkles,
   Calendar,
-  Clock,
   ArrowLeft,
   LogOut,
   Brain,
