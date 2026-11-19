@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
 import { getAdminSession } from "@/lib/auth";
 import { prisma, ensurePrismaWAL } from "@/lib/prisma";
-import { SEED_THEMES } from "@/lib/seed-data";
+import { SEED_THEMES, SEED_PARTICIPANTS } from "@/lib/seed-data";
 
 export const dynamic = "force-dynamic";
 
@@ -80,9 +80,29 @@ export async function POST() {
       }
     }
 
+    // 4. Seed default participants if none exist
+    const partCount = await prisma.participant.count().catch(() => 0);
+    let seededParticipantsCount = 0;
+    if (partCount === 0) {
+      for (const p of SEED_PARTICIPANTS) {
+        await prisma.participant.upsert({
+          where: { username: p.username },
+          update: {},
+          create: {
+            username: p.username,
+            fullName: p.fullName,
+            accessToken: p.accessToken,
+            sessionBatch: p.sessionBatch,
+            hasSpun: false,
+          },
+        });
+        seededParticipantsCount++;
+      }
+    }
+
     return NextResponse.json({
       success: true,
-      message: `Database berhasil diinisialisasi. ${seededThemesCount} tema baru, ${seededMotionsCount} mosi baru.`,
+      message: `Database berhasil diinisialisasi. ${seededThemesCount} tema baru, ${seededMotionsCount} mosi baru, ${seededParticipantsCount} peserta default.`,
     });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : "Gagal menginisialisasi database.";

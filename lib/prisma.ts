@@ -191,7 +191,11 @@ export async function ensurePrismaWAL(): Promise<void> {
           }
         }
 
-        // Seed default participants
+      }
+
+      // Self-healing check: verify if Participant table has data
+      const participantCount = await prisma.participant.count().catch(() => 0);
+      if (participantCount === 0) {
         for (const p of SEED_PARTICIPANTS) {
           await prisma.participant.upsert({
             where: { username: p.username },
@@ -203,7 +207,7 @@ export async function ensurePrismaWAL(): Promise<void> {
               sessionBatch: p.sessionBatch,
               hasSpun: false,
             },
-          });
+          }).catch(() => {});
         }
       }
 
