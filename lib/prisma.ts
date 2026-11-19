@@ -10,34 +10,19 @@ const globalForPrisma = globalThis as unknown as {
 };
 
 function getDatabaseUrl(): string {
-  // If running on Vercel Serverless environment, use writable /tmp
+  // If remote database URL is configured (e.g. PostgreSQL, Supabase, Neon, Turso), always prioritize it
+  if (process.env.DATABASE_URL && !process.env.DATABASE_URL.startsWith("file:")) {
+    return process.env.DATABASE_URL;
+  }
+
+  // If running on Vercel Serverless environment with SQLite, use writable /tmp
   if (process.env.VERCEL) {
     const tmpDbPath = "/tmp/generatics.db";
-    if (!fs.existsSync(tmpDbPath)) {
-      const candidates = [
-        path.join(process.cwd(), "prisma", "generatics.db"),
-        path.join(process.cwd(), "data", "generatics.db"),
-        path.resolve("./prisma/generatics.db"),
-        path.resolve("./data/generatics.db"),
-      ];
-
-      for (const src of candidates) {
-        if (fs.existsSync(src)) {
-          try {
-            fs.copyFileSync(src, tmpDbPath);
-            break;
-          } catch (e) {
-            console.error("Failed to copy source db to /tmp:", e);
-          }
-        }
-      }
-    }
     return `file:${tmpDbPath}`;
   }
 
-  // Local development / server environments
+  // Local development / persistent server (PM2, Docker, VPS)
   if (process.env.DATABASE_URL) {
-    // If the path starts with file:../, convert to absolute path from project root
     if (process.env.DATABASE_URL.startsWith("file:../data/")) {
       return `file:${path.join(process.cwd(), "data", "generatics.db")}`;
     }

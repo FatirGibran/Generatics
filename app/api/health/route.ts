@@ -12,6 +12,7 @@ export async function GET() {
       {
         status: "ok",
         db: "connected",
+        dbProtocol: process.env.DATABASE_URL ? process.env.DATABASE_URL.split(":")[0] : "none",
         app: "debate-generatics-2026",
         uptime: process.uptime(),
         timestamp: new Date().toISOString(),
