@@ -52,9 +52,17 @@ export async function PATCH(req: NextRequest) {
     } = {};
 
     if (body.isSpinOpen !== undefined) updateData.isSpinOpen = Boolean(body.isSpinOpen);
-    if (body.randomMode !== undefined) updateData.randomMode = String(body.randomMode);
+    if (body.randomMode !== undefined) {
+      const mode = String(body.randomMode).trim();
+      if (mode === "BALANCED" || mode === "PURE_RANDOM") {
+        updateData.randomMode = mode;
+      }
+    }
     if (body.prepDurationSeconds !== undefined) {
-      updateData.prepDurationSeconds = Number(body.prepDurationSeconds);
+      const sec = Number(body.prepDurationSeconds);
+      if (Number.isFinite(sec) && sec >= 30 && sec <= 7200) {
+        updateData.prepDurationSeconds = Math.round(sec);
+      }
     }
 
     const setting = await prisma.systemSetting.upsert({

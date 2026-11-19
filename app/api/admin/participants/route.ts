@@ -5,7 +5,7 @@ import { prisma, ensurePrismaWAL } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
 
-function generateToken(): string {
+function generateRawToken(): string {
   const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
   let code = "";
   for (let i = 0; i < 4; i++) {
@@ -14,11 +14,23 @@ function generateToken(): string {
   return `STR-${code}`;
 }
 
+async function getUniqueToken(customToken?: string): Promise<string> {
+  if (customToken) {
+    return customToken.trim().toUpperCase();
+  }
+  for (let i = 0; i < 15; i++) {
+    const candidate = generateRawToken();
+    const existing = await prisma.participant.findUnique({ where: { accessToken: candidate } });
+    if (!existing) return candidate;
+  }
+  return `STR-${crypto.randomBytes(3).toString("hex").toUpperCase()}`;
+}
+
 export async function GET(req: NextRequest) {
   try {
     await ensurePrismaWAL();
     const session = await getAdminSession();
-    if (!session) {
+    if (!session || session.role !== "admin") {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
@@ -59,7 +71,7 @@ export async function POST(req: NextRequest) {
   try {
     await ensurePrismaWAL();
     const session = await getAdminSession();
-    if (!session) {
+    if (!session || session.role !== "admin") {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
@@ -73,19 +85,25 @@ export async function POST(req: NextRequest) {
         for (const item of body.participants) {
           if (!item.username || !item.fullName) continue;
           const cleanUsername = String(item.username).trim();
-          const token = item.accessToken ? String(item.accessToken).trim().toUpperCase() : generateToken();
+          const cleanName = String(item.fullName).trim();
+          const sessionBatch = item.sessionBatch ? String(item.sessionBatch).trim() : "Day 1";
+
+          let token = item.accessToken ? String(item.accessToken).trim().toUpperCase() : "";
+          if (!token) {
+            token = generateRawToken();
+          }
 
           await tx.participant.upsert({
             where: { username: cleanUsername },
             update: {
-              fullName: String(item.fullName).trim(),
-              sessionBatch: item.sessionBatch || "Day 1",
+              fullName: cleanName,
+              sessionBatch,
             },
             create: {
               username: cleanUsername,
-              fullName: String(item.fullName).trim(),
+              fullName: cleanName,
               accessToken: token,
-              sessionBatch: item.sessionBatch || "Day 1",
+              sessionBatch,
               hasSpun: false,
             },
           });
@@ -106,7 +124,7 @@ export async function POST(req: NextRequest) {
     }
 
     const cleanUsername = String(username).trim();
-    const token = accessToken ? String(accessToken).trim().toUpperCase() : generateToken();
+    const token = await getUniqueToken(accessToken);
 
     const existing = await prisma.participant.findUnique({
       where: { username: cleanUsername },
@@ -119,12 +137,23 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    const existingToken = await prisma.participant.findUnique({
+      where: { accessToken: token },
+    });
+
+    if (existingToken) {
+      return NextResponse.json(
+        { error: `Token ${token} sudah digunakan oleh peserta lain.` },
+        { status: 400 }
+      );
+    }
+
     const created = await prisma.participant.create({
       data: {
         username: cleanUsername,
         fullName: String(fullName).trim(),
         accessToken: token,
-        sessionBatch: sessionBatch || "Day 1",
+        sessionBatch: sessionBatch ? String(sessionBatch).trim() : "Day 1",
         hasSpun: false,
       },
     });
@@ -148,7 +177,7 @@ export async function DELETE(req: NextRequest) {
   try {
     await ensurePrismaWAL();
     const session = await getAdminSession();
-    if (!session) {
+    if (!session || session.role !== "admin") {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
@@ -159,8 +188,34 @@ export async function DELETE(req: NextRequest) {
       return NextResponse.json({ error: "Username wajib disertakan." }, { status: 400 });
     }
 
-    await prisma.participant.delete({
-      where: { username },
+    const cleanUsername = String(username).trim();
+
+    await prisma.$transaction(async (tx) => {
+      const participant = await tx.participant.findUnique({
+        where: { username: cleanUsername },
+      });
+
+      if (!participant) {
+        throw new Error("Peserta tidak ditemukan.");
+      }
+
+      // If participant had spun and had an assigned motion, decrement motion usedCount
+      if (participant.assignedMotionId) {
+        const motion = await tx.motion.findUnique({
+          where: { id: participant.assignedMotionId },
+        });
+
+        if (motion && motion.usedCount > 0) {
+          await tx.motion.update({
+            where: { id: participant.assignedMotionId },
+            data: { usedCount: { decrement: 1 } },
+          });
+        }
+      }
+
+      await tx.participant.delete({
+        where: { username: cleanUsername },
+      });
     });
 
     return NextResponse.json({ success: true });

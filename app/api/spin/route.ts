@@ -114,7 +114,7 @@ export async function POST() {
         throw new Error("Sesi undian mosi belum dibuka oleh panitia.");
       }
 
-      // 2. Read participant inside transaction
+      // 2. Read participant inside transaction (concurrency lock)
       const p = await tx.participant.findUnique({
         where: { username },
         include: {
@@ -135,12 +135,20 @@ export async function POST() {
           motionText: p.assignedMotion?.motionText || "Mosi Terpilih",
           stance: p.assignedStance,
           spunAt: p.spunAt ? p.spunAt.toISOString() : new Date().toISOString(),
+          participant: {
+            username: p.username,
+            fullName: p.fullName,
+            sessionBatch: p.sessionBatch,
+          },
         };
       }
 
-      // 3. Query active motions with their themes
+      // 3. Query active motions belonging to active themes only
       const activeMotions = await tx.motion.findMany({
-        where: { isActive: true },
+        where: {
+          isActive: true,
+          theme: { isActive: true },
+        },
         include: { theme: true },
       });
 
@@ -151,7 +159,7 @@ export async function POST() {
       });
 
       if (availableMotions.length === 0) {
-        throw new Error("Seluruh mosi aktif telah mencapai kuota maksimal. Hubungi panitia.");
+        throw new Error("Seluruh mosi aktif pada tema yang dibuka telah mencapai kuota maksimal. Hubungi panitia.");
       }
 
       // Select random motion via cryptographic randomness
@@ -163,7 +171,7 @@ export async function POST() {
       const randomMode = settings.randomMode || "BALANCED";
 
       if (randomMode === "BALANCED") {
-        const batch = p.sessionBatch || "Day 1";
+        const batch = (p.sessionBatch || "Day 1").trim();
         const batchParticipants = await tx.participant.findMany({
           where: { sessionBatch: batch, hasSpun: true },
           select: { assignedStance: true },
@@ -214,8 +222,23 @@ export async function POST() {
         motionText: chosenMotion.motionText,
         stance,
         spunAt: now.toISOString(),
+        participant: {
+          username: p.username,
+          fullName: p.fullName,
+          sessionBatch: p.sessionBatch,
+        },
       };
     });
+
+    if (result.alreadySpun) {
+      return NextResponse.json(
+        {
+          error: "Kesempatan spin akunmu sudah digunakan (hanya berlaku 1 kali). Hanya admin yang dapat mereset status undian ini.",
+          ...result,
+        },
+        { status: 409 }
+      );
+    }
 
     return NextResponse.json({ success: true, ...result });
   } catch (error: unknown) {
