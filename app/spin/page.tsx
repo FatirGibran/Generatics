@@ -44,16 +44,65 @@ export default function SpinPage() {
   const [showClosing, setShowClosing] = useState<boolean>(false);
   const aliveRef = useRef(true);
 
-  const fetchSpinInfo = useCallback(async (): Promise<"ok" | "unauthorized" | "error"> => {
-    const res = await fetch("/api/spin", { cache: "no-store" });
-    if (res.status === 401) return "unauthorized";
-    if (!res.ok) return "error";
-    const data = await res.json();
-    if (!aliveRef.current) return "ok";
-    setThemes(Array.isArray(data.themes) ? data.themes : []);
-    setIsSpinOpen(data.settings?.isSpinOpen ?? true);
-    setPrepDuration(data.settings?.prepDurationSeconds || 300);
-    return "ok";
+  const syncSpinState = useCallback(async (): Promise<"ok" | "unauthorized" | "error"> => {
+    try {
+      const res = await fetch("/api/spin", { cache: "no-store" });
+      if (res.status === 401) return "unauthorized";
+      if (!res.ok) return "error";
+      const data = await res.json();
+      if (!aliveRef.current) return "ok";
+
+      setThemes(Array.isArray(data.themes) ? data.themes : []);
+      setIsSpinOpen(data.settings?.isSpinOpen ?? true);
+      setPrepDuration(data.settings?.prepDurationSeconds || 300);
+
+      const p: UserProfile | null = data.participant;
+      if (p) {
+        setUser(p);
+
+        if (p.hasSpun) {
+          // Locked in DB: Ensure ResultCard is locked and wheel cannot be shown
+          setResult((prev) => {
+            if (
+              prev &&
+              prev.motionText === p.assignedMotionText &&
+              prev.stance === p.assignedStance
+            ) {
+              return prev;
+            }
+            soundManager.setBGMMood("calm");
+            return {
+              themeName: p.assignedThemeName || "Tema Terpilih",
+              motionText: p.assignedMotionText || "Mosi Terpilih",
+              stance: p.assignedStance || "PRO",
+              spunAt: p.spunAt || new Date().toISOString(),
+              participant: {
+                username: p.username,
+                fullName: p.fullName || "",
+                sessionBatch: p.sessionBatch || "",
+              },
+            };
+          });
+        } else {
+          // NOT SPUN OR ADMIN HAS RESET:
+          // If the participant was previously showing result, unlock immediately!
+          setResult((prev) => {
+            if (prev) {
+              soundManager.setBGMMood("curious");
+              setShowClosing(false);
+              if (typeof window !== "undefined") {
+                sessionStorage.removeItem(`generatics_closing_${p.username}`);
+              }
+            }
+            return null;
+          });
+        }
+      }
+
+      return "ok";
+    } catch {
+      return "error";
+    }
   }, []);
 
   // Ensure BGM plays when entering or refreshing /spin
@@ -95,9 +144,11 @@ export default function SpinPage() {
         });
       } else {
         soundManager.setBGMMood("curious");
+        setResult(null);
+        setShowClosing(false);
       }
 
-      const status = await fetchSpinInfo();
+      const status = await syncSpinState();
       if (status === "unauthorized") {
         router.replace("/");
         return;
@@ -112,7 +163,7 @@ export default function SpinPage() {
         setReady(true);
       }
     }
-  }, [router, fetchSpinInfo]);
+  }, [router, syncSpinState]);
 
   useEffect(() => {
     aliveRef.current = true;
@@ -122,14 +173,14 @@ export default function SpinPage() {
     };
   }, [load]);
 
-  // While the session is closed, quietly check whether the committee has opened it.
+  // Real-time synchronization loop: updates lock status, admin resets, and session toggle every 3 seconds
   useEffect(() => {
-    if (!ready || loadError || isSpinOpen || result) return;
-    const id = window.setInterval(() => {
-      fetchSpinInfo().catch(() => undefined);
-    }, POLL_CLOSED_MS);
-    return () => window.clearInterval(id);
-  }, [ready, loadError, isSpinOpen, result, fetchSpinInfo]);
+    if (!ready || loadError) return;
+    const intervalId = window.setInterval(() => {
+      syncSpinState().catch(() => undefined);
+    }, 3000);
+    return () => window.clearInterval(intervalId);
+  }, [ready, loadError, syncSpinState]);
 
   const handleLogout = async () => {
     try {

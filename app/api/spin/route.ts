@@ -88,14 +88,17 @@ export async function POST() {
     }
 
     if (initialParticipant.hasSpun) {
-      return NextResponse.json({
-        success: true,
-        alreadySpun: true,
-        themeName: initialParticipant.assignedMotion?.theme?.name || "Tema Terpilih",
-        motionText: initialParticipant.assignedMotion?.motionText || "Mosi Terpilih",
-        stance: initialParticipant.assignedStance,
-        spunAt: initialParticipant.spunAt ? initialParticipant.spunAt.toISOString() : new Date().toISOString(),
-      });
+      return NextResponse.json(
+        {
+          error: "Kesempatan spin akunmu sudah digunakan (hanya berlaku 1 kali). Hanya admin yang dapat mereset status undian ini.",
+          alreadySpun: true,
+          themeName: initialParticipant.assignedMotion?.theme?.name || "Tema Terpilih",
+          motionText: initialParticipant.assignedMotion?.motionText || "Mosi Terpilih",
+          stance: initialParticipant.assignedStance,
+          spunAt: initialParticipant.spunAt ? initialParticipant.spunAt.toISOString() : new Date().toISOString(),
+        },
+        { status: 409 }
+      );
     }
 
     // Execute atomic transaction for spin

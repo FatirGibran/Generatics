@@ -333,6 +333,10 @@ export default function SpinWheel({
       if (!mountedRef.current) return;
       if (!outcome.ok) {
         if (outcome.status === 401) onUnauthorized?.();
+        if (outcome.data?.alreadySpun) {
+          reveal(outcome.data, false);
+          return;
+        }
         abort(friendlyError(outcome));
         return;
       }
@@ -374,6 +378,10 @@ export default function SpinWheel({
 
     if (!outcome.ok) {
       if (outcome.status === 401) onUnauthorized?.();
+      if (outcome.data?.alreadySpun) {
+        reveal(outcome.data, false);
+        return;
+      }
       abort(friendlyError(outcome));
       return;
     }
