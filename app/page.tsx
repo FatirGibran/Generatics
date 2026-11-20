@@ -37,9 +37,9 @@ export default function HomePage() {
     let cancelled = false;
     (async () => {
       try {
-        const res = await fetch(`/api/auth/me?_t=${Date.now()}`, { cache: "no-store" });
+        const res = await fetch(`/api/auth/me?role=participant&_t=${Date.now()}`, { cache: "no-store", signal: AbortSignal.timeout(15000) });
         const data = await res.json();
-        if (data.authenticated && data.role === "participant") {
+        if (!cancelled && res.ok && data.authenticated && data.role === "participant") {
           router.replace("/spin");
           return;
         }
@@ -69,6 +69,7 @@ export default function HomePage() {
   };
 
   const handleBackToIntro = () => {
+    if (submitting) return;
     soundManager.playClick();
     setError(null);
     setStage("intro");
@@ -101,6 +102,7 @@ export default function HomePage() {
     try {
       const res = await fetch("/api/auth/participant", {
         method: "POST",
+        signal: AbortSignal.timeout(15000),
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ username: cleanUser, accessToken: cleanToken }),
       });
@@ -136,7 +138,11 @@ export default function HomePage() {
         return;
       }
 
-      const alreadySpun = Boolean(data.participant?.hasSpun);
+      if (!data.participant?.username) {
+        fail("Respons login tidak valid. Silakan coba lagi.", { username: false, token: false });
+        return;
+      }
+      const alreadySpun = Boolean(data.participant.hasSpun);
       setIsAlreadySpun(alreadySpun);
 
       // Success: Play cosmic portal warp animation into the debate arena!
@@ -411,6 +417,7 @@ export default function HomePage() {
                 <button
                   type="button"
                   onClick={handleBackToIntro}
+                  disabled={submitting}
                   className="inline-flex items-center gap-1.5 font-sans text-xs font-semibold text-[#FAF6EB]/60 transition-colors hover:text-[#FACC15]"
                 >
                   <ArrowLeft className="h-3.5 w-3.5" />

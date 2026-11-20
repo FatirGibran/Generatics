@@ -52,25 +52,35 @@ export async function PATCH(req: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const body = await req.json();
+    const body = await req.json().catch(() => null);
+    if (!body || typeof body !== "object" || Array.isArray(body)) {
+      return NextResponse.json({ error: "Data pengaturan tidak valid." }, { status: 400 });
+    }
     const updateData: {
       isSpinOpen?: boolean;
       randomMode?: string;
       prepDurationSeconds?: number;
     } = {};
 
-    if (body.isSpinOpen !== undefined) updateData.isSpinOpen = Boolean(body.isSpinOpen);
-    if (body.randomMode !== undefined) {
-      const mode = String(body.randomMode).trim();
-      if (mode === "BALANCED" || mode === "PURE_RANDOM") {
-        updateData.randomMode = mode;
+    if (body.isSpinOpen !== undefined) {
+      if (typeof body.isSpinOpen !== "boolean") {
+        return NextResponse.json({ error: "Status akses spin harus boolean." }, { status: 400 });
       }
+      updateData.isSpinOpen = body.isSpinOpen;
+    }
+    if (body.randomMode !== undefined) {
+      const mode = body.randomMode;
+      if (mode !== "BALANCED" && mode !== "PURE_RANDOM") {
+        return NextResponse.json({ error: "Mode pengacakan tidak valid." }, { status: 400 });
+      }
+      updateData.randomMode = mode;
     }
     if (body.prepDurationSeconds !== undefined) {
-      const sec = Number(body.prepDurationSeconds);
-      if (Number.isFinite(sec) && sec >= 30 && sec <= 7200) {
-        updateData.prepDurationSeconds = Math.round(sec);
+      const sec = body.prepDurationSeconds;
+      if (typeof sec !== "number" || !Number.isInteger(sec) || sec < 30 || sec > 7200) {
+        return NextResponse.json({ error: "Durasi persiapan harus 30–7200 detik (bilangan bulat)." }, { status: 400 });
       }
+      updateData.prepDurationSeconds = sec;
     }
 
     const setting = await prisma.systemSetting.upsert({

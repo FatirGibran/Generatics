@@ -6,7 +6,6 @@ export const dynamic = "force-dynamic";
 
 export async function GET(req: NextRequest) {
   try {
-    await ensurePrismaWAL();
     const { searchParams } = new URL(req.url);
     const requestedRole = searchParams.get("role");
 
@@ -31,6 +30,7 @@ export async function GET(req: NextRequest) {
     }
 
     // Participant session: fetch latest state
+    await ensurePrismaWAL();
     const participant = await prisma.participant.findUnique({
       where: { username: session.username },
       include: {
@@ -41,7 +41,7 @@ export async function GET(req: NextRequest) {
     });
 
     if (!participant) {
-      return NextResponse.json({ authenticated: false }, { status: 404 });
+      return NextResponse.json({ authenticated: false }, { status: 401 });
     }
 
     return NextResponse.json({
@@ -63,8 +63,7 @@ export async function GET(req: NextRequest) {
         stance: participant.assignedStance,
       },
     });
-  } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : "Gagal memverifikasi sesi.";
-    return NextResponse.json({ authenticated: false, error: message }, { status: 500 });
+  } catch {
+    return NextResponse.json({ authenticated: false, error: "Gagal memverifikasi sesi." }, { status: 500 });
   }
 }

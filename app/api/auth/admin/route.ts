@@ -5,18 +5,18 @@ import { signSessionToken, ADMIN_COOKIE_NAME, COOKIE_NAME } from "@/lib/auth";
 
 export async function POST(req: NextRequest) {
   try {
-    await ensurePrismaWAL();
-    const { username, password } = await req.json();
+    const body: unknown = await req.json().catch(() => null);
+    const { username, password } = (body && typeof body === "object" ? body : {}) as Record<string, unknown>;
 
-    if (!username || !password) {
+    if (typeof username !== "string" || !username.trim() || typeof password !== "string" || !password) {
       return NextResponse.json(
         { error: "Username dan password panitia wajib diisi." },
         { status: 400 }
       );
     }
 
-    const cleanUsername = String(username).trim();
-    const cleanPassword = String(password).trim();
+    const cleanUsername = username.trim();
+    await ensurePrismaWAL();
 
     const admin = await prisma.admin.findUnique({
       where: { username: cleanUsername },
@@ -29,17 +29,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    let isValid = await bcrypt.compare(cleanPassword, admin.passwordHash || "");
-
-    // Resilient fallback: support both standard passwords and auto-sync hash
-    if (!isValid && (cleanPassword === "generatics2026" || cleanPassword === "admin_generatics_2026")) {
-      isValid = true;
-      const newHash = await bcrypt.hash(cleanPassword, 10);
-      await prisma.admin.update({
-        where: { username: cleanUsername },
-        data: { passwordHash: newHash },
-      }).catch(() => {});
-    }
+    const isValid = await bcrypt.compare(password, admin.passwordHash);
 
     if (!isValid) {
       return NextResponse.json(
@@ -87,7 +77,7 @@ export async function POST(req: NextRequest) {
 
     return response;
   } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : "Gagal memproses autentikasi panitia.";
-    return NextResponse.json({ error: message }, { status: 500 });
+    console.error("Autentikasi panitia gagal:", error);
+    return NextResponse.json({ error: "Layanan masuk panitia belum tersedia. Silakan coba lagi." }, { status: 500 });
   }
 }

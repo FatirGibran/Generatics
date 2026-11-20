@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import crypto from "crypto";
+import { Prisma } from "@prisma/client";
+import { ParticipantInputError, validateParticipant, validateParticipantBatch } from "@/lib/participant-import";
 import { getAdminSession } from "@/lib/auth";
 import { prisma, ensurePrismaWAL } from "@/lib/prisma";
 
@@ -14,21 +16,45 @@ function generateRawToken(): string {
   return `STR-${code}`;
 }
 
-async function getUniqueToken(customToken?: string): Promise<string> {
-  if (customToken) {
-    return customToken.trim().toUpperCase();
-  }
-  for (let i = 0; i < 15; i++) {
+async function getUniqueToken(tx: Prisma.TransactionClient, customToken?: string): Promise<string> {
+  if (customToken) return customToken;
+  for (let i = 0; i < 32; i++) {
     const candidate = generateRawToken();
-    const existing = await prisma.participant.findUnique({ where: { accessToken: candidate } });
+    const existing = await tx.participant.findUnique({ where: { accessToken: candidate } });
     if (!existing) return candidate;
   }
-  return `STR-${crypto.randomBytes(3).toString("hex").toUpperCase()}`;
+  throw new Error("Gagal membuat token unik. Silakan coba lagi.");
+}
+
+function errorResponse(error: unknown, fallback: string, row?: number) {
+  let status = 500;
+  let message = fallback;
+  if (error instanceof SyntaxError) {
+    status = 400;
+    message = "JSON tidak valid.";
+  } else if (error instanceof ParticipantInputError) {
+    status = error.status;
+    message = error.message;
+    row = error.row ?? row;
+  } else if (error instanceof Prisma.PrismaClientKnownRequestError) {
+    if (error.code === "P2002") {
+      status = 409;
+      message = String(error.meta?.target).toLowerCase().includes("accesstoken")
+        ? "Token sudah digunakan oleh peserta lain. Gunakan token berbeda."
+        : "Username/NIM sudah terdaftar. Gunakan username/NIM berbeda.";
+    } else if (error.code === "P2025") {
+      status = 404;
+      message = "Peserta tidak ditemukan.";
+    }
+  }
+  if (row !== undefined && !(error instanceof ParticipantInputError && error.row !== undefined)) {
+    message = `Baris ${row}: ${message}`;
+  }
+  return NextResponse.json({ error: message, ...(row !== undefined ? { row } : {}) }, { status });
 }
 
 export async function GET(req: NextRequest) {
   try {
-    await ensurePrismaWAL();
     const session = await getAdminSession();
     if (!session || session.role !== "admin") {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -36,6 +62,10 @@ export async function GET(req: NextRequest) {
 
     const { searchParams } = new URL(req.url);
     const batch = searchParams.get("batch");
+    if (batch && !["ALL", "Day 1", "Day 2"].includes(batch)) {
+      return NextResponse.json({ error: "Sesi wajib Day 1 atau Day 2." }, { status: 400 });
+    }
+    await ensurePrismaWAL();
 
     const participants = await prisma.participant.findMany({
       where: batch && batch !== "ALL" ? { sessionBatch: batch } : undefined,
@@ -76,114 +106,64 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
+  let row: number | undefined;
   try {
-    await ensurePrismaWAL();
     const session = await getAdminSession();
     if (!session || session.role !== "admin") {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const body = await req.json();
+    const body: unknown = await req.json();
+    const bulk = body !== null && typeof body === "object" && "participants" in body;
+    const participants = bulk
+      ? validateParticipantBatch((body as { participants: unknown }).participants)
+      : [validateParticipant(body)];
+    await ensurePrismaWAL();
 
-    // Bulk import
-    if (Array.isArray(body.participants)) {
-      let importedCount = 0;
+    // Imports are create-only: any conflict rolls back every row, never overwriting results or identity.
+    const created = await prisma.$transaction(async (tx) => {
+      const result = [];
+      for (let index = 0; index < participants.length; index++) {
+        row = bulk ? index + 1 : undefined;
+        const item = participants[index];
+        const accessToken = await getUniqueToken(tx, item.accessToken);
+        result.push(await tx.participant.create({
+          data: { ...item, accessToken, hasSpun: false },
+          select: { username: true, fullName: true, sessionBatch: true, accessToken: true },
+        }));
+      }
+      return result;
+    }, { timeout: 30_000 });
 
-      await prisma.$transaction(async (tx) => {
-        for (const item of body.participants) {
-          if (!item.username || !item.fullName) continue;
-          const cleanUsername = String(item.username).trim();
-          const cleanName = String(item.fullName).trim();
-          const sessionBatch = item.sessionBatch ? String(item.sessionBatch).trim() : "Day 1";
-
-          let token = item.accessToken ? String(item.accessToken).trim().toUpperCase() : "";
-          if (!token) {
-            token = generateRawToken();
-          }
-
-          await tx.participant.upsert({
-            where: { username: cleanUsername },
-            update: {
-              fullName: cleanName,
-              sessionBatch,
-            },
-            create: {
-              username: cleanUsername,
-              fullName: cleanName,
-              accessToken: token,
-              sessionBatch,
-              hasSpun: false,
-            },
-          });
-          importedCount++;
-        }
-      });
-
-      return NextResponse.json({ success: true, count: importedCount });
-    }
-
-    // Single participant creation
-    const { username, fullName, accessToken, sessionBatch } = body;
-    if (!username || !fullName) {
-      return NextResponse.json(
-        { error: "Username/NIM dan Nama Lengkap wajib diisi." },
-        { status: 400 }
-      );
-    }
-
-    const cleanUsername = String(username).trim();
-    const token = await getUniqueToken(accessToken);
-
-    const existing = await prisma.participant.findUnique({
-      where: { username: cleanUsername },
-    });
-
-    if (existing) {
-      return NextResponse.json(
-        { error: `Peserta dengan username/NIM ${cleanUsername} sudah terdaftar.` },
-        { status: 400 }
-      );
-    }
-
-    const existingToken = await prisma.participant.findUnique({
-      where: { accessToken: token },
-    });
-
-    if (existingToken) {
-      return NextResponse.json(
-        { error: `Token ${token} sudah digunakan oleh peserta lain.` },
-        { status: 400 }
-      );
-    }
-
-    const created = await prisma.participant.create({
-      data: {
-        username: cleanUsername,
-        fullName: String(fullName).trim(),
-        accessToken: token,
-        sessionBatch: sessionBatch ? String(sessionBatch).trim() : "Day 1",
-        hasSpun: false,
-      },
-    });
-
-    return NextResponse.json({
-      success: true,
-      participant: {
-        username: created.username,
-        fullName: created.fullName,
-        accessToken: created.accessToken,
-        sessionBatch: created.sessionBatch,
-      },
-    });
+    return NextResponse.json(bulk
+      ? { success: true, count: created.length }
+      : { success: true, participant: created[0] });
   } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : "Gagal menambahkan peserta.";
-    return NextResponse.json({ error: message }, { status: 500 });
+    return errorResponse(error, "Gagal menambahkan peserta.", row);
+  }
+}
+
+export async function PATCH(req: NextRequest) {
+  try {
+    const session = await getAdminSession();
+    if (!session || session.role !== "admin") {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+    const { username, fullName, sessionBatch, accessToken } = validateParticipant(await req.json(), true);
+    await ensurePrismaWAL();
+    const participant = await prisma.participant.update({
+      where: { username },
+      data: { fullName, sessionBatch, accessToken },
+      select: { username: true, fullName: true, sessionBatch: true, accessToken: true },
+    });
+    return NextResponse.json({ success: true, participant });
+  } catch (error: unknown) {
+    return errorResponse(error, "Gagal mengubah peserta.");
   }
 }
 
 export async function DELETE(req: NextRequest) {
   try {
-    await ensurePrismaWAL();
     const session = await getAdminSession();
     if (!session || session.role !== "admin") {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -192,11 +172,12 @@ export async function DELETE(req: NextRequest) {
     const { searchParams } = new URL(req.url);
     const username = searchParams.get("username");
 
-    if (!username) {
+    if (!username?.trim()) {
       return NextResponse.json({ error: "Username wajib disertakan." }, { status: 400 });
     }
 
-    const cleanUsername = String(username).trim();
+    const cleanUsername = username.trim();
+    await ensurePrismaWAL();
 
     await prisma.$transaction(async (tx) => {
       const participant = await tx.participant.findUnique({
@@ -204,7 +185,7 @@ export async function DELETE(req: NextRequest) {
       });
 
       if (!participant) {
-        throw new Error("Peserta tidak ditemukan.");
+        throw new ParticipantInputError("Peserta tidak ditemukan.", 404);
       }
 
       // If participant had spun and had an assigned motion, decrement motion usedCount
@@ -228,7 +209,6 @@ export async function DELETE(req: NextRequest) {
 
     return NextResponse.json({ success: true });
   } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : "Gagal menghapus peserta.";
-    return NextResponse.json({ error: message }, { status: 500 });
+    return errorResponse(error, "Gagal menghapus peserta.");
   }
 }

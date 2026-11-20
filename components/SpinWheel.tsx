@@ -20,6 +20,7 @@ interface SpinWheelProps {
   isSpinOpen: boolean;
   hasSpun?: boolean;
   onSpinStart?: () => void;
+  onSpinError?: () => void;
   onSpinComplete: (result: SpinResult) => void;
   /** Called when the server says the session is no longer valid (HTTP 401). */
   onUnauthorized?: () => void;
@@ -94,16 +95,21 @@ function friendlyError(outcome: SpinOutcome): string {
   }
   if (outcome.status === 401) return "Sesi masuk kamu berakhir. Silakan masuk kembali.";
   if (outcome.status >= 500) return "Server sedang sibuk. Tunggu sebentar lalu coba lagi.";
-  return outcome.data.error || "Undian belum bisa diproses. Coba lagi sebentar lagi ya.";
+  return outcome.data?.error || "Undian belum bisa diproses. Coba lagi sebentar lagi ya.";
 }
 
-function toResult(data: SpinApiData): SpinResult {
+function toResult(data: SpinApiData): SpinResult | null {
+  if (!data || typeof data.themeName !== "string" || !data.themeName.trim() ||
+      typeof data.motionText !== "string" || !data.motionText.trim() ||
+      (data.stance !== "PRO" && data.stance !== "KONTRA") ||
+      typeof data.spunAt !== "string" || !Number.isFinite(Date.parse(data.spunAt)) ||
+      typeof data.participant?.username !== "string" || !data.participant.username) return null;
   return {
-    themeName: data.themeName ?? "",
-    motionText: data.motionText ?? "",
-    stance: data.stance ?? "PRO",
-    spunAt: data.spunAt ?? new Date().toISOString(),
-    participant: data.participant ?? { username: "", fullName: "", sessionBatch: "" },
+    themeName: data.themeName,
+    motionText: data.motionText,
+    stance: data.stance,
+    spunAt: data.spunAt,
+    participant: data.participant,
   };
 }
 
@@ -112,6 +118,7 @@ export default function SpinWheel({
   isSpinOpen,
   hasSpun = false,
   onSpinStart,
+  onSpinError,
   onSpinComplete,
   onUnauthorized,
 }: SpinWheelProps) {
@@ -285,35 +292,36 @@ export default function SpinWheel({
     animate(scale, 1, { type: "spring", stiffness: 300, damping: 18 });
     busyRef.current = false;
     setIsSpinning(false);
+    onSpinError?.();
   };
 
   const requestSpin = async (): Promise<SpinOutcome> => {
     try {
       const res = await fetch("/api/spin", {
         method: "POST",
+        signal: AbortSignal.timeout(15000),
         headers: { "Content-Type": "application/json" },
       });
       const data = (await res.json().catch(() => ({}))) as SpinApiData;
-      return { ok: res.ok, status: res.status, data };
+      return { ok: res.ok || (res.status === 409 && data?.alreadySpun === true), status: res.status, data };
     } catch {
       return { ok: false, status: 0, data: {} };
     }
   };
 
-  const reveal = (data: SpinApiData, withConfetti: boolean) => {
+  const reveal = (data: SpinResult, withConfetti: boolean) => {
     stopFlash();
     tickEnabledRef.current = false;
     setTrail(false);
     soundManager.playFanfare();
-    window.setTimeout(() => {
-      soundManager.resumeBGMAfterSpin();
-    }, 2800);
+
     animate(scale, 1, { type: "spring", stiffness: 400, damping: 17 });
     if (withConfetti) fireConfetti(data.stance ?? "PRO");
     later(() => {
+      soundManager.resumeBGMAfterSpin();
       busyRef.current = false;
       setIsSpinning(false);
-      onSpinComplete(toResult(data));
+      onSpinComplete(data);
     }, withConfetti ? 2500 : 0);
   };
 
@@ -336,14 +344,15 @@ export default function SpinWheel({
     if (reduce) {
       const outcome = await request;
       if (!mountedRef.current) return;
-      if (!outcome.ok) {
+      const spinResult = toResult(outcome.data);
+      if (!outcome.ok || !spinResult) {
         if (outcome.status === 401) onUnauthorized?.();
-        abort(friendlyError(outcome));
+        abort(outcome.ok ? "Hasil undian tidak lengkap. Muat ulang atau hubungi panitia." : friendlyError(outcome));
         return;
       }
-      setSettledStance(outcome.data.stance ?? null);
+      setSettledStance(spinResult.stance);
       setLampState("settled");
-      reveal(outcome.data, true);
+      reveal(spinResult, !outcome.data.alreadySpun);
       return;
     }
 
@@ -363,9 +372,14 @@ export default function SpinWheel({
     const outcome = await request;
     if (!mountedRef.current) return;
 
-    if (!outcome.ok) {
+    const spinResult = toResult(outcome.data);
+    if (!outcome.ok || !spinResult) {
       if (outcome.status === 401) onUnauthorized?.();
-      abort(friendlyError(outcome));
+      abort(outcome.ok ? "Hasil undian tidak lengkap. Muat ulang atau hubungi panitia." : friendlyError(outcome));
+      return;
+    }
+    if (outcome.data.alreadySpun) {
+      reveal(spinResult, false);
       return;
     }
 
@@ -405,7 +419,7 @@ export default function SpinWheel({
       soundManager.resumeBGMAfterSpin();
       busyRef.current = false;
       setIsSpinning(false);
-      onSpinComplete(toResult(outcome.data));
+      onSpinComplete(spinResult);
     }, 2500);
   };
 

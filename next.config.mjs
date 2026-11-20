@@ -7,14 +7,7 @@ const nextConfig = {
   eslint: {
     ignoreDuringBuilds: true,
   },
-  experimental: {
-    outputFileTracingIncludes: {
-      "/**/*": [
-        "./prisma/generatics.db",
-        "./data/generatics.db",
-      ],
-    },
-  },
+
 };
 
 export default nextConfig;

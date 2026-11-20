@@ -1,9 +1,11 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { AlertTriangle, Plus, Search, Trash2, X } from "lucide-react";
+import { AlertTriangle, Pencil, Plus, Search, Trash2, Upload, X } from "lucide-react";
 import type { Motion, Theme } from "@/lib/types";
-import { EmptyOrbit, StarIcon, Surface, focusRing } from "./ui";
+import { EmptyOrbit, StarIcon, Surface, focusRing, inputCls, labelCls } from "./ui";
+import Modal, { ModalActions } from "./Modal";
+import MotionEditor from "./MotionEditor";
 
 interface MotionsTabProps {
   themes: Theme[];
@@ -12,10 +14,14 @@ interface MotionsTabProps {
   onAddMotion: () => void;
   onRequestDeleteTheme: (t: Theme) => void;
   onRequestDeleteMotion: (m: Motion) => void;
+  onRefresh?: () => void | Promise<void>;
+  notify?: (text: string, type?: "success" | "error") => void;
 }
 
+type Editor = { kind: "theme"; theme: Theme } | { kind: "motion"; motion: Motion } | { kind: "bulk" };
+
 function QuotaMeter({ used, max }: { used: number; max: number | null }) {
-  if (!max) {
+  if (max === null) {
     return (
       <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-[#C7CDFB]">
         <span className="font-mono tabular-nums">{used}</span> terpakai · tanpa batas ∞
@@ -63,9 +69,49 @@ export default function MotionsTab({
   onAddMotion,
   onRequestDeleteTheme,
   onRequestDeleteMotion,
+  onRefresh,
+  notify,
 }: MotionsTabProps) {
   const [search, setSearch] = useState("");
   const [themeFilter, setThemeFilter] = useState("ALL");
+  const [editor, setEditor] = useState<Editor | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  const openEditor = (next: Editor) => {
+    setError("");
+    setEditor(next);
+  };
+  const closeEditor = () => { if (!saving) setEditor(null); };
+  const save = async (resource: "themes" | "motions", method: "POST" | "PATCH", body: Record<string, unknown>) => {
+    if (saving) return;
+    setSaving(true);
+    setError("");
+    try {
+      const response = await fetch(`/api/admin/${resource}`, {
+        method,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "Gagal menyimpan perubahan.");
+    } catch (cause) {
+      const message = cause instanceof Error ? cause.message : "Gagal menyimpan perubahan.";
+      setError(message);
+      notify?.(message, "error");
+      setSaving(false);
+      return;
+    }
+    setEditor(null);
+    notify?.("Perubahan berhasil disimpan.");
+    try {
+      await onRefresh?.();
+    } catch {
+      notify?.("Tersimpan, tetapi penyegaran data gagal. Muat ulang data.", "error");
+    } finally {
+      setSaving(false);
+    }
+  };
 
   const groups = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -87,6 +133,10 @@ export default function MotionsTab({
           <p className="mt-1 text-sm text-[#FAF6EB]/60">Bank mosi yang akan diundi pada Babak I.</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          <button type="button" onClick={() => openEditor({ kind: "bulk" })} disabled={themes.length === 0 || saving}
+            className={`btn-ghost-night inline-flex min-h-[44px] items-center gap-2 rounded-xl px-4 text-sm font-bold disabled:opacity-50 ${focusRing}`}>
+            <Upload className="h-4 w-4" /> Mosi Massal
+          </button>
           <button
             type="button"
             onClick={onAddTheme}
@@ -171,7 +221,7 @@ export default function MotionsTab({
       ) : (
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
           {groups.map(({ theme, index, all, shown }) => {
-            const full = all.filter((m) => m.maxUsage && m.usedCount >= m.maxUsage).length;
+            const full = all.filter((m) => m.maxUsage !== null && m.usedCount >= m.maxUsage).length;
             return (
               <Surface key={theme.id} className="p-5" glow={index % 2 ? "#818CF8" : "#FACC15"}>
                 <div className="flex items-start gap-3">
@@ -187,6 +237,7 @@ export default function MotionsTab({
                       <p className="mt-1 text-sm leading-relaxed text-[#FAF6EB]/60">{theme.description}</p>
                     )}
                     <p className="mt-2 flex flex-wrap items-center gap-2 text-[11px] font-bold">
+                      <span className={theme.isActive ? "text-emerald-300" : "text-[#FAF6EB]/50"}>{theme.isActive ? "Aktif" : "Nonaktif"}</span>
                       <span className="rounded-full bg-[#818CF8]/15 px-2.5 py-0.5 text-[#C7CDFB] ring-1 ring-inset ring-[#818CF8]/30">
                         {all.length} mosi
                       </span>
@@ -197,6 +248,11 @@ export default function MotionsTab({
                       )}
                     </p>
                   </div>
+                  <button type="button" onClick={() => openEditor({ kind: "theme", theme })} disabled={saving}
+                    aria-label={`Ubah tema ${theme.name}`} title="Ubah tema dan status"
+                    className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-[#FACC15] hover:bg-white/10 ${focusRing}`}>
+                    <Pencil className="h-4 w-4" />
+                  </button>
                   <button
                     type="button"
                     onClick={() => onRequestDeleteTheme(theme)}
@@ -215,8 +271,8 @@ export default function MotionsTab({
                     </li>
                   )}
                   {shown.map((m) => {
-                    const max = m.maxUsage || null;
-                    const isFull = !!max && m.usedCount >= max;
+                    const max = m.maxUsage;
+                    const isFull = max !== null && m.usedCount >= max;
                     return (
                       <li
                         key={m.id}
@@ -228,8 +284,16 @@ export default function MotionsTab({
                           <p className="text-sm italic leading-relaxed text-[#FAF6EB]/90">
                             &ldquo;{m.motionText}&rdquo;
                           </p>
+                          <p className={`text-xs ${m.isActive ? "text-emerald-300" : "text-[#FAF6EB]/50"}`}>
+                            {m.isActive ? "Aktif" : "Nonaktif"}{m.isActive && !theme.isActive ? " · tema nonaktif" : ""}
+                          </p>
                           <QuotaMeter used={m.usedCount} max={max} />
                         </div>
+                        <button type="button" onClick={() => openEditor({ kind: "motion", motion: m })} disabled={saving}
+                          aria-label={`Ubah mosi ${m.motionText}`} title="Ubah mosi, kuota, dan status"
+                          className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-[#FACC15] hover:bg-white/10 ${focusRing}`}>
+                          <Pencil className="h-4 w-4" />
+                        </button>
                         <button
                           type="button"
                           onClick={() => onRequestDeleteMotion(m)}
@@ -247,6 +311,51 @@ export default function MotionsTab({
             );
           })}
         </div>
+      )}
+
+      {editor && editor.kind !== "theme" && (
+        <MotionEditor key={editor.kind === "motion" ? editor.motion.id : "bulk"}
+          themes={themes} motion={editor.kind === "motion" ? editor.motion : null}
+          saving={saving} error={error} onClose={closeEditor}
+          onSave={(body) => save("motions", editor.kind === "bulk" ? "POST" : "PATCH", body)} />
+      )}
+      {editor?.kind === "theme" && (
+        <Modal open onClose={closeEditor} title="Ubah Tema"
+          description="Nama tema yang sudah diundi dikunci untuk menjaga hasil peserta. Deskripsi dan status tetap dapat diubah.">
+          <form key={editor.theme.id} className="space-y-4" onSubmit={(event) => {
+            event.preventDefault();
+            const form = new FormData(event.currentTarget);
+            const body: Record<string, unknown> = {
+              id: editor.theme.id,
+              description: form.get("description"),
+              isActive: form.get("isActive") === "on",
+            };
+            const name = form.get("name");
+            if (name !== null && String(name).trim() !== editor.theme.name) body.name = String(name).trim();
+            void save("themes", "PATCH", body);
+          }}>
+            <fieldset disabled={saving} className="space-y-4 disabled:opacity-60">
+              <div>
+                <label htmlFor="edit-theme-name" className={labelCls}>Nama Tema</label>
+                <input id="edit-theme-name" name="name" required defaultValue={editor.theme.name}
+                  disabled={motions.some((m) => m.themeId === editor.theme.id && m.usedCount > 0)} className={inputCls} />
+              </div>
+              <div>
+                <label htmlFor="edit-theme-description" className={labelCls}>Deskripsi</label>
+                <textarea id="edit-theme-description" name="description" defaultValue={editor.theme.description ?? ""} rows={3} className={inputCls} />
+              </div>
+              <label className="flex min-h-[44px] items-center gap-3 text-sm text-[#FAF6EB]">
+                <input name="isActive" type="checkbox" defaultChecked={editor.theme.isActive} className="h-5 w-5 accent-[#FACC15]" />
+                Tema aktif (mosi di tema nonaktif tidak akan diundi)
+              </label>
+            </fieldset>
+            {error && <p role="alert" className="text-sm text-red-300">{error}</p>}
+            <ModalActions>
+              <button type="button" disabled={saving} onClick={closeEditor} className={`btn-ghost-night min-h-[44px] rounded-xl px-5 text-sm font-bold ${focusRing}`}>Batal</button>
+              <button type="submit" disabled={saving} className={`btn-gold min-h-[44px] rounded-xl px-5 text-sm font-black disabled:opacity-50 ${focusRing}`}>{saving ? "Menyimpan…" : "Simpan"}</button>
+            </ModalActions>
+          </form>
+        </Modal>
       )}
     </div>
   );

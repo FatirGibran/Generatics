@@ -38,7 +38,7 @@ export default function SettingsTab({ settings, onToggleSpin, onUpdate }: Settin
   }, [settings.prepDurationSeconds]);
 
   const minutes = Number(draft);
-  const valid = draft.trim() !== "" && Number.isFinite(minutes) && minutes >= 1;
+  const valid = draft.trim() !== "" && Number.isFinite(minutes) && minutes >= 0.5 && minutes <= 120;
   const dirty = valid && Math.round(minutes * 60) !== settings.prepDurationSeconds;
 
   return (
@@ -141,8 +141,9 @@ export default function SettingsTab({ settings, onToggleSpin, onUpdate }: Settin
               id="prep-minutes"
               type="number"
               inputMode="decimal"
-              min={1}
-              step={0.5}
+              min={0.5}
+              max={120}
+              step="any"
               value={draft}
               aria-invalid={!valid}
               onChange={(e) => setDraft(e.target.value)}
@@ -159,7 +160,7 @@ export default function SettingsTab({ settings, onToggleSpin, onUpdate }: Settin
           </button>
           <p className="pb-2.5 text-xs text-[#FAF6EB]/55" aria-live="polite">
             {!valid
-              ? "Minimal 1 menit."
+              ? "Durasi harus 0,5–120 menit."
               : dirty
                 ? "Belum disimpan."
                 : `Tersimpan: ${settings.prepDurationSeconds} detik.`}

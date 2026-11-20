@@ -8,13 +8,13 @@ export const dynamic = "force-dynamic";
 
 export async function GET() {
   try {
-    await ensurePrismaWAL();
     const session = await getParticipantSession();
     if (!session || session.role !== "participant") {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const [setting, themes, participant] = await Promise.all([
+    await ensurePrismaWAL();
+    const [setting, themes, participant] = await prisma.$transaction([
       prisma.systemSetting.findUnique({ where: { id: 1 } }),
       prisma.theme.findMany({
         where: { isActive: true },
@@ -29,6 +29,10 @@ export async function GET() {
         },
       }),
     ]);
+
+    if (!participant) {
+      return NextResponse.json({ error: "Akun peserta tidak terdaftar." }, { status: 401 });
+    }
 
     const settings = setting || {
       isSpinOpen: false,
@@ -61,15 +65,13 @@ export async function GET() {
           }
         : null,
     });
-  } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : "Gagal mengambil status arena spin.";
-    return NextResponse.json({ error: message }, { status: 500 });
+  } catch {
+    return NextResponse.json({ error: "Gagal mengambil status arena spin." }, { status: 500 });
   }
 }
 
 export async function POST() {
   try {
-    await ensurePrismaWAL();
     const session = await getParticipantSession();
     if (!session || session.role !== "participant") {
       return NextResponse.json({ error: "Sesi tidak valid. Silakan login kembali." }, { status: 401 });
@@ -77,48 +79,13 @@ export async function POST() {
 
     const username = session.username;
 
-    // Fast-path check outside transaction
-    const initialParticipant = await prisma.participant.findUnique({
-      where: { username },
-      include: {
-        assignedMotion: {
-          include: { theme: true },
-        },
-      },
-    });
-
-    if (!initialParticipant) {
-      return NextResponse.json({ error: "Akun peserta tidak terdaftar." }, { status: 404 });
-    }
-
-    if (initialParticipant.hasSpun) {
-      return NextResponse.json(
-        {
-          error: "Kesempatan spin akunmu sudah digunakan (hanya berlaku 1 kali). Hanya admin yang dapat mereset status undian ini.",
-          alreadySpun: true,
-          themeName: initialParticipant.assignedMotion?.theme?.name || "Tema Terpilih",
-          motionText: initialParticipant.assignedMotion?.motionText || "Mosi Terpilih",
-          stance: initialParticipant.assignedStance,
-          spunAt: initialParticipant.spunAt ? initialParticipant.spunAt.toISOString() : new Date().toISOString(),
-          participant: {
-            username: initialParticipant.username,
-            fullName: initialParticipant.fullName,
-            sessionBatch: initialParticipant.sessionBatch,
-          },
-        },
-        { status: 409 }
-      );
-    }
-
-    // Execute atomic transaction for spin
+    await ensurePrismaWAL();
     const result = await prisma.$transaction(async (tx) => {
-      // 1. Read global settings
-      const settings = await tx.systemSetting.findUnique({ where: { id: 1 } });
-      if (!settings?.isSpinOpen) {
-        throw new Error("Sesi undian mosi belum dibuka oleh panitia.");
-      }
-
-      // 2. Read participant inside transaction (concurrency lock)
+      // Acquire SQLite's writer lock before reads; a deferred read cannot safely upgrade under contention.
+      const claimed = await tx.participant.updateMany({
+        where: { username, hasSpun: false },
+        data: { hasSpun: true },
+      });
       const p = await tx.participant.findUnique({
         where: { username },
         include: {
@@ -132,19 +99,28 @@ export async function POST() {
         throw new Error("Data peserta tidak ditemukan.");
       }
 
-      if (p.hasSpun) {
+      if (claimed.count === 0) {
+        if (!p.assignedMotion || !p.spunAt ||
+            (p.assignedStance !== "PRO" && p.assignedStance !== "KONTRA")) {
+          throw new Error("Hasil undian tidak lengkap. Hubungi panitia.");
+        }
         return {
           alreadySpun: true,
-          themeName: p.assignedMotion?.theme?.name || "Tema Terpilih",
-          motionText: p.assignedMotion?.motionText || "Mosi Terpilih",
+          themeName: p.assignedMotion.theme.name,
+          motionText: p.assignedMotion.motionText,
           stance: p.assignedStance,
-          spunAt: p.spunAt ? p.spunAt.toISOString() : new Date().toISOString(),
+          spunAt: p.spunAt.toISOString(),
           participant: {
             username: p.username,
             fullName: p.fullName,
             sessionBatch: p.sessionBatch,
           },
         };
+      }
+
+      const settings = await tx.systemSetting.findUnique({ where: { id: 1 } });
+      if (!settings?.isSpinOpen) {
+        throw new Error("Sesi undian mosi belum dibuka oleh panitia.");
       }
 
       // 3. Query active motions belonging to active themes only
@@ -177,7 +153,7 @@ export async function POST() {
       if (randomMode === "BALANCED") {
         const batch = (p.sessionBatch || "Day 1").trim();
         const batchParticipants = await tx.participant.findMany({
-          where: { sessionBatch: batch, hasSpun: true },
+          where: { sessionBatch: batch, hasSpun: true, username: { not: username } },
           select: { assignedStance: true },
         });
 

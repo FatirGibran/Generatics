@@ -36,7 +36,7 @@ export default function SpinPage() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [user, setUser] = useState<UserProfile | null>(null);
   const [themes, setThemes] = useState<ThemeItem[]>([]);
-  const [isSpinOpen, setIsSpinOpen] = useState(true);
+  const [isSpinOpen, setIsSpinOpen] = useState(false);
   const [prepDuration, setPrepDuration] = useState(300);
   const [result, setResult] = useState<SpinResult | null>(null);
   const [showClosing, setShowClosing] = useState<boolean>(false);
@@ -44,252 +44,108 @@ export default function SpinPage() {
   const isSpinningRef = useRef(false);
   const aliveRef = useRef(true);
 
-  const syncSpinState = useCallback(async (): Promise<"ok" | "unauthorized" | "error"> => {
-    // Never interrupt or overwrite state while the user is actively watching the wheel spin
-    if (isSpinningRef.current) return "ok";
+  const syncVersionRef = useRef(0);
 
+  const syncSpinState = useCallback(async (): Promise<"ok" | "unauthorized" | "error"> => {
+    if (isSpinningRef.current) return "ok";
+    const version = ++syncVersionRef.current;
     try {
-      const res = await fetch("/api/spin", { cache: "no-store" });
+      const res = await fetch("/api/spin", { cache: "no-store", signal: AbortSignal.timeout(15000) });
+      if (!aliveRef.current || version !== syncVersionRef.current || isSpinningRef.current) return "ok";
       if (res.status === 401) return "unauthorized";
       if (!res.ok) return "error";
       const data = await res.json();
-      if (!aliveRef.current || isSpinningRef.current) return "ok";
+      if (!aliveRef.current || version !== syncVersionRef.current || isSpinningRef.current) return "ok";
+      const p: UserProfile | null = data.participant;
+      if (!p) return "unauthorized";
+      if (p.hasSpun && (!p.assignedThemeName || !p.assignedMotionText ||
+          (p.assignedStance !== "PRO" && p.assignedStance !== "KONTRA") ||
+          !p.spunAt || !Number.isFinite(Date.parse(p.spunAt)))) return "error";
 
       setThemes(Array.isArray(data.themes) ? data.themes : []);
-      setIsSpinOpen(data.settings?.isSpinOpen ?? true);
+      setIsSpinOpen(data.settings?.isSpinOpen === true);
       setPrepDuration(data.settings?.prepDurationSeconds || 300);
-
-      const p: UserProfile | null = data.participant;
-      if (p) {
-        setUser(p);
-
-        if (p.hasSpun) {
-          const spinResult: SpinResult = {
-            themeName: p.assignedThemeName || "Tema Terpilih",
-            motionText: p.assignedMotionText || "Mosi Terpilih",
-            stance: p.assignedStance || "PRO",
-            spunAt: p.spunAt || new Date().toISOString(),
-            participant: {
-              username: p.username,
-              fullName: p.fullName || "",
-              sessionBatch: p.sessionBatch || "",
-            },
-          };
-
-          // Cache in localStorage as safety net
-          if (typeof window !== "undefined") {
-            try {
-              localStorage.setItem(`generatics_result_${p.username}`, JSON.stringify(spinResult));
-            } catch {
-              // Ignore storage errors
-            }
-          }
-
-          setResult((prev) => {
-            if (
-              prev &&
-              prev.motionText === p.assignedMotionText &&
-              prev.stance === p.assignedStance
-            ) {
-              return prev;
-            }
-            soundManager.setBGMMood("calm");
-            return spinResult;
-          });
-        } else {
-          // NOT SPUN: Clean up any stale closing flags and timer cache, unlock wheel immediately
-          if (typeof window !== "undefined") {
-            sessionStorage.removeItem(`generatics_closing_${p.username}`);
-            localStorage.removeItem(`generatics_result_${p.username}`);
-            try {
-              const prefix = `generatics_timer_${p.username}`;
-              Object.keys(localStorage).forEach((k) => {
-                if (k.startsWith(prefix)) localStorage.removeItem(k);
-              });
-            } catch {
-              // Ignore storage errors
-            }
-          }
-          setShowClosing(false);
-          setResult((prev) => {
-            if (prev) {
-              soundManager.setBGMMood("curious");
-            }
-            return null;
-          });
-        }
-      }
-
-      return "ok";
-    } catch {
-      return "error";
-    }
-  }, []);
-
-  // Ensure BGM plays when entering or refreshing /spin
-  useEffect(() => {
-    if (!soundManager.getMuted()) {
-      soundManager.startBGM();
-    }
-  }, []);
-
-  const load = useCallback(async () => {
-    setLoadError(null);
-    setReady(false);
-    try {
-      const meRes = await fetch(`/api/auth/me?role=participant&_t=${Date.now()}`, {
-        cache: "no-store",
-      });
-      if (meRes.status === 401) {
-        router.replace("/");
-        return;
-      }
-      if (meRes.status >= 500) throw new Error("server");
-      const me = await meRes.json();
-
-      if (!(me.authenticated && me.role === "participant")) {
-        router.replace("/");
-        return;
-      }
-      if (!aliveRef.current) return;
-
-      const p: UserProfile = me.participant;
       setUser(p);
-
       if (p.hasSpun) {
-        soundManager.setBGMMood("calm");
-        const lockedResult: SpinResult = {
-          themeName: p.assignedThemeName || "Tema Terpilih",
-          motionText: p.assignedMotionText || "Mosi Terpilih",
-          stance: p.assignedStance || "PRO",
-          spunAt: p.spunAt || new Date().toISOString(),
+        const spinResult: SpinResult = {
+          themeName: p.assignedThemeName!,
+          motionText: p.assignedMotionText!,
+          stance: p.assignedStance!,
+          spunAt: p.spunAt!,
           participant: {
             username: p.username,
             fullName: p.fullName || "",
             sessionBatch: p.sessionBatch || "",
           },
         };
-
-        if (typeof window !== "undefined") {
-          try {
-            localStorage.setItem(`generatics_result_${p.username}`, JSON.stringify(lockedResult));
-          } catch {
-            // Ignore storage errors
-          }
-        }
-
-        setResult(lockedResult);
+        setResult(spinResult);
+        soundManager.setBGMMood("calm");
       } else {
-        soundManager.setBGMMood("curious");
-        if (typeof window !== "undefined") {
+        try {
           sessionStorage.removeItem(`generatics_closing_${p.username}`);
           localStorage.removeItem(`generatics_result_${p.username}`);
-          try {
-            const prefix = `generatics_timer_${p.username}`;
-            Object.keys(localStorage).forEach((k) => {
-              if (k.startsWith(prefix)) localStorage.removeItem(k);
-            });
-          } catch {
-            // Ignore storage errors
-          }
+        } catch {
+          // Storage is optional; the server remains authoritative.
         }
         setResult(null);
         setShowClosing(false);
+        soundManager.setBGMMood("curious");
       }
-
-      const status = await syncSpinState();
-      if (status === "unauthorized") {
-        router.replace("/");
-        return;
-      }
-      if (status === "error" && !p.hasSpun) {
-        throw new Error("spin");
-      }
-      if (aliveRef.current) setReady(true);
+      return "ok";
     } catch {
-      if (aliveRef.current) {
-        setLoadError("Arena belum bisa dimuat. Periksa koneksi internetmu lalu coba lagi.");
-        setReady(true);
-      }
+      return "error";
     }
-  }, [router, syncSpinState]);
-
-  // Strict one-time mount check: prevents unnecessary re-triggers and redirect bouncing
-  useEffect(() => {
-    aliveRef.current = true;
-    load();
-    return () => {
-      aliveRef.current = false;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Real-time synchronization loop:
-  // 1. If unspun, sync themes and settings periodically
-  // 2. If already spun or locked, check every 5s and on window focus whether admin has reset this participant
   useEffect(() => {
-    if (!ready || loadError || isSpinning) {
+    if (!soundManager.getMuted()) soundManager.startBGM();
+  }, []);
+
+  const load = useCallback(async () => {
+    setLoadError(null);
+    setReady(false);
+    const status = await syncSpinState();
+    if (!aliveRef.current) return;
+    if (status === "unauthorized") {
+      router.replace("/");
       return;
     }
+    if (status === "error") {
+      setLoadError("Arena belum bisa dimuat. Periksa koneksi internetmu lalu coba lagi.");
+    }
+    setReady(true);
+  }, [router, syncSpinState]);
 
-    const checkState = async () => {
-      if (isSpinningRef.current) return;
-
-      // When participant has already spun or has active result, check if admin triggered a reset
-      if (user?.hasSpun || result) {
-        try {
-          const res = await fetch(`/api/auth/me?role=participant&_t=${Date.now()}`, {
-            cache: "no-store",
-          });
-          if (res.status === 401) {
-            router.replace("/");
-            return;
-          }
-          if (!res.ok) return;
-          const me = await res.json();
-          if (!aliveRef.current || isSpinningRef.current) return;
-
-          if (me.authenticated && me.participant && me.participant.hasSpun === false) {
-            // Admin has performed a reset! Clear local caches and unlock spin arena
-            const uname = me.participant.username;
-            if (typeof window !== "undefined" && uname) {
-              sessionStorage.removeItem(`generatics_closing_${uname}`);
-              localStorage.removeItem(`generatics_result_${uname}`);
-              try {
-                const prefix = `generatics_timer_${uname}`;
-                Object.keys(localStorage).forEach((k) => {
-                  if (k.startsWith(prefix)) localStorage.removeItem(k);
-                });
-              } catch {
-                // Ignore storage errors
-              }
-            }
-            setUser(me.participant);
-            setResult(null);
-            setShowClosing(false);
-            soundManager.setBGMMood("curious");
-          }
-        } catch {
-          // Network errors ignored during passive sync
-        }
-      } else {
-        // Participant has not spun: poll spin configuration
-        syncSpinState().catch(() => undefined);
-      }
-    };
-
-    const intervalId = window.setInterval(checkState, 4000);
-    const onFocus = () => {
-      checkState().catch(() => undefined);
-    };
-
-    window.addEventListener("focus", onFocus);
-
+  useEffect(() => {
+    aliveRef.current = true;
+    void load();
     return () => {
+      aliveRef.current = false;
+      syncVersionRef.current++;
+    };
+  }, [load]);
+
+  useEffect(() => {
+    if (!ready || loadError || isSpinning) return;
+    let pending = false;
+    let cancelled = false;
+    const checkState = async () => {
+      if (pending || isSpinningRef.current) return;
+      pending = true;
+      const status = await syncSpinState();
+      pending = false;
+      if (!cancelled && status === "unauthorized") router.replace("/");
+    };
+    const intervalId = window.setInterval(checkState, 4000);
+    const onFocus = () => { void checkState(); };
+    window.addEventListener("focus", onFocus);
+    void checkState();
+    return () => {
+      cancelled = true;
       window.clearInterval(intervalId);
       window.removeEventListener("focus", onFocus);
     };
-  }, [ready, loadError, isSpinning, user?.hasSpun, result, router, syncSpinState]);
+  }, [ready, loadError, isSpinning, router, syncSpinState]);
 
   const handleLogout = async () => {
     try {
@@ -301,6 +157,7 @@ export default function SpinPage() {
   };
 
   const handleSpinStart = () => {
+    syncVersionRef.current++;
     setIsSpinning(true);
     isSpinningRef.current = true;
   };
@@ -346,29 +203,32 @@ export default function SpinPage() {
     setResult(finalResult);
   };
 
-  // Restore saved closing screen state ONLY IF participant has legitimately spun
   useEffect(() => {
-    if (typeof window !== "undefined" && user?.username && user?.hasSpun) {
-      const saved = sessionStorage.getItem(`generatics_closing_${user.username}`);
-      if (saved === "true") {
-        setShowClosing(true);
-      }
+    try {
+      setShowClosing(Boolean(user?.hasSpun && user.spunAt &&
+        sessionStorage.getItem(`generatics_closing_${user.username}`) === user.spunAt));
+    } catch {
+      setShowClosing(false);
     }
-  }, [user?.username, user?.hasSpun]);
+  }, [user?.username, user?.hasSpun, user?.spunAt]);
 
   const handleOpenClosing = () => {
     soundManager.playFanfare();
     setShowClosing(true);
-    if (typeof window !== "undefined" && user?.username) {
-      sessionStorage.setItem(`generatics_closing_${user.username}`, "true");
+    try {
+      if (user?.spunAt) sessionStorage.setItem(`generatics_closing_${user.username}`, user.spunAt);
+    } catch {
+      // Storage is optional.
     }
   };
 
   const handleBackToCard = () => {
     soundManager.playClick();
     setShowClosing(false);
-    if (typeof window !== "undefined" && user?.username) {
-      sessionStorage.removeItem(`generatics_closing_${user.username}`);
+    try {
+      if (user?.username) sessionStorage.removeItem(`generatics_closing_${user.username}`);
+    } catch {
+      // Storage is optional.
     }
   };
 
@@ -381,23 +241,7 @@ export default function SpinPage() {
       }
     : null;
 
-  // Active result resolution with safety fallback to localStorage
-  const activeResult: SpinResult | null = isSpinning
-    ? null
-    : result ||
-      (user?.hasSpun
-        ? {
-            themeName: user.assignedThemeName || "Tema Terpilih",
-            motionText: user.assignedMotionText || "Mosi Terpilih",
-            stance: user.assignedStance || "PRO",
-            spunAt: user.spunAt || new Date().toISOString(),
-            participant: {
-              username: user.username,
-              fullName: user.fullName || "",
-              sessionBatch: user.sessionBatch || "",
-            },
-          }
-        : null);
+  const activeResult = isSpinning ? null : result;
 
   return (
     <div className="flex min-h-screen flex-1 flex-col">
@@ -481,6 +325,7 @@ export default function SpinPage() {
                 participant={activeResult.participant}
               >
                 <PrepTimer
+                  key={`${user?.username}:${activeResult.spunAt}`}
                   initialSeconds={prepDuration}
                   username={user?.username}
                   spunAt={activeResult.spunAt}
@@ -531,6 +376,10 @@ export default function SpinPage() {
               hasSpun={Boolean(user?.hasSpun)}
               onSpinStart={handleSpinStart}
               onSpinComplete={handleSpinComplete}
+              onSpinError={() => {
+                isSpinningRef.current = false;
+                setIsSpinning(false);
+              }}
               onUnauthorized={() => router.replace("/")}
             />
           </div>

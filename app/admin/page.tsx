@@ -11,6 +11,8 @@ import ToastStack from "@/components/admin/ToastStack";
 import OverviewTab from "@/components/admin/OverviewTab";
 import ParticipantsTab from "@/components/admin/ParticipantsTab";
 import MotionsTab from "@/components/admin/MotionsTab";
+import ParticipantEditor from "@/components/admin/ParticipantEditor";
+import { parseParticipantCsv, parseParticipantXlsx } from "@/lib/participant-import";
 import SettingsTab from "@/components/admin/SettingsTab";
 import { StarLoader, focusRing, inputCls, labelCls } from "@/components/admin/ui";
 import type { TabId, ToastItem, ToastType } from "@/components/admin/types";
@@ -60,6 +62,12 @@ export default function AdminDashboardPage() {
   const [newPartName, setNewPartName] = useState("");
   const [newPartBatch, setNewPartBatch] = useState("Day 1");
   const [bulkCsvText, setBulkCsvText] = useState("");
+  const [bulkFile, setBulkFile] = useState<File | null>(null);
+  const [newPartToken, setNewPartToken] = useState("");
+  const [participantSaving, setParticipantSaving] = useState(false);
+  const participantSubmitting = useRef(false);
+  const [participantError, setParticipantError] = useState("");
+  const [editingParticipant, setEditingParticipant] = useState<Participant | null>(null);
 
   // Form inputs for theme
   const [newThemeName, setNewThemeName] = useState("");
@@ -226,6 +234,10 @@ export default function AdminDashboardPage() {
 
   const handleAddParticipant = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (participantSubmitting.current) return;
+    participantSubmitting.current = true;
+    setParticipantSaving(true);
+    setParticipantError("");
     soundManager.playClick();
     try {
       const res = await fetch("/api/admin/participants", {
@@ -234,46 +246,43 @@ export default function AdminDashboardPage() {
         body: JSON.stringify({
           username: newPartUsername.trim(),
           fullName: newPartName.trim(),
+          accessToken: newPartToken.trim() || undefined,
           sessionBatch: newPartBatch,
         }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error);
+      if (!res.ok) throw new Error(data.error || "Gagal menambah peserta.");
 
       notify(`Peserta ${newPartName} berhasil ditambahkan! Token: ${data.participant?.accessToken}`);
       setNewPartUsername("");
       setNewPartName("");
+      setNewPartToken("");
+      setParticipants((current) => [{ ...data.participant, hasSpun: false }, ...current.filter((p) => p.username !== data.participant.username)]);
       setShowAddParticipant(false);
-      refreshData();
+      await refreshData();
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Gagal menambah peserta.";
+      setParticipantError(msg);
       notify(msg, "error");
+    } finally {
+      participantSubmitting.current = false;
+      setParticipantSaving(false);
     }
   };
 
   const handleBulkImportCsv = async () => {
     soundManager.playClick();
-    if (!bulkCsvText.trim()) return;
-
+    if (participantSubmitting.current || (!bulkFile && !bulkCsvText.trim())) return;
+    participantSubmitting.current = true;
+    setParticipantSaving(true);
+    setParticipantError("");
     try {
-      const lines = bulkCsvText.trim().split("\n");
-      const list = [];
-      for (const line of lines) {
-        const parts = line.split(",").map((s) => s.trim().replace(/^"|"$/g, ""));
-        if (parts.length >= 2 && parts[0] !== "username") {
-          list.push({
-            username: parts[0],
-            fullName: parts[1],
-            sessionBatch: parts[2] || "Day 1",
-            accessToken: parts[3] || undefined,
-          });
-        }
-      }
-
-      if (list.length === 0) {
-        notify("Format CSV tidak sesuai.", "error");
-        return;
-      }
+      if (bulkFile && bulkFile.size > 5 * 1024 * 1024) throw new Error("Ukuran file maksimal 5 MB.");
+      const list = bulkFile
+        ? /\.csv$/i.test(bulkFile.name)
+          ? parseParticipantCsv(await bulkFile.text())
+          : parseParticipantXlsx(await bulkFile.arrayBuffer())
+        : parseParticipantCsv(bulkCsvText);
 
       const res = await fetch("/api/admin/participants", {
         method: "POST",
@@ -286,11 +295,16 @@ export default function AdminDashboardPage() {
 
       notify(`Berhasil mengimpor ${data.count} peserta.`);
       setBulkCsvText("");
+      setBulkFile(null);
       setShowBulkImport(false);
-      refreshData();
+      await refreshData();
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "Gagal mengimpor CSV.";
+      const msg = err instanceof Error ? err.message : "Gagal mengimpor peserta.";
+      setParticipantError(msg);
       notify(msg, "error");
+    } finally {
+      participantSubmitting.current = false;
+      setParticipantSaving(false);
     }
   };
 
@@ -344,7 +358,7 @@ export default function AdminDashboardPage() {
         notify(`Tema "${name}" dihapus.`);
         refreshData();
       } else {
-        notify("Gagal menghapus tema.", "error");
+        notify((await res.json()).error || "Gagal menghapus tema.", "error");
       }
     } catch {
       notify("Gagal menghapus tema.", "error");
@@ -387,7 +401,7 @@ export default function AdminDashboardPage() {
         notify("Mosi berhasil dihapus.");
         refreshData();
       } else {
-        notify("Gagal menghapus mosi.", "error");
+        notify((await res.json()).error || "Gagal menghapus mosi.", "error");
       }
     } catch {
       notify("Gagal menghapus mosi.", "error");
@@ -507,6 +521,8 @@ export default function AdminDashboardPage() {
           <MotionsTab
             themes={themes}
             motions={motions}
+            onRefresh={refreshData}
+            notify={notify}
             onAddTheme={() => setShowAddTheme(true)}
             onAddMotion={() => setShowAddMotion(true)}
             onRequestDeleteTheme={(theme) => setPending({ kind: "deleteTheme", theme })}
@@ -516,8 +532,9 @@ export default function AdminDashboardPage() {
         {activeTab === "participants" && (
           <ParticipantsTab
             participants={participants}
-            onAdd={() => setShowAddParticipant(true)}
-            onBulk={() => setShowBulkImport(true)}
+            onAdd={() => { setParticipantError(""); setShowAddParticipant(true); }}
+            onBulk={() => { setParticipantError(""); setShowBulkImport(true); }}
+            onEdit={setEditingParticipant}
             onRequestReset={(p) => setPending({ kind: "reset", participant: p })}
             onRequestDelete={(p) => setPending({ kind: "deleteParticipant", participant: p })}
             notify={notify}
@@ -529,6 +546,7 @@ export default function AdminDashboardPage() {
       </AdminShell>
 
       <ToastStack toasts={toasts} onDismiss={dismissToast} />
+      <ParticipantEditor participant={editingParticipant} onClose={() => setEditingParticipant(null)} onSaved={refreshData} notify={notify} />
 
       <ConfirmDialog
         open={pending !== null}
@@ -542,11 +560,12 @@ export default function AdminDashboardPage() {
       {/* ===== MODAL: TAMBAH PESERTA ===== */}
       <Modal
         open={showAddParticipant}
-        onClose={() => setShowAddParticipant(false)}
+        onClose={() => { if (!participantSubmitting.current) setShowAddParticipant(false); }}
         title="Tambah Peserta"
         description="Token akses dibuat otomatis oleh sistem (format STR-XXXX)."
       >
-        <form onSubmit={handleAddParticipant} className="space-y-4">
+        <form onSubmit={handleAddParticipant} className="space-y-4" aria-busy={participantSaving}>
+          <fieldset disabled={participantSaving} className="space-y-4 disabled:opacity-60">
           <div>
             <label htmlFor="new-part-username" className={labelCls}>
               NIM / Username
@@ -555,7 +574,8 @@ export default function AdminDashboardPage() {
               id="new-part-username"
               type="text"
               required
-              inputMode="numeric"
+              autoComplete="off"
+              pattern=".*\S.*"
               placeholder="Contoh: 103012600006"
               value={newPartUsername}
               onChange={(e) => setNewPartUsername(e.target.value)}
@@ -590,16 +610,23 @@ export default function AdminDashboardPage() {
               <option value="Day 2">Day 2 (Hari Kedua)</option>
             </select>
           </div>
+          <div>
+            <label htmlFor="new-part-token" className={labelCls}>Token Akses (opsional)</label>
+            <input id="new-part-token" value={newPartToken} onChange={(e) => setNewPartToken(e.target.value)} className={`${inputCls} font-mono uppercase`} placeholder="Kosongkan untuk membuat STR-XXXX" autoComplete="off" />
+          </div>
+          </fieldset>
+          {participantError && <p role="alert" className="text-sm text-red-300">{participantError}</p>}
           <ModalActions>
             <button
               type="button"
+              disabled={participantSaving}
               onClick={() => setShowAddParticipant(false)}
               className={`btn-ghost-night min-h-[44px] rounded-xl px-5 text-sm font-bold ${focusRing}`}
             >
               Batal
             </button>
-            <button type="submit" className={`btn-gold min-h-[44px] rounded-xl px-5 text-sm font-black ${focusRing}`}>
-              Simpan Peserta
+            <button type="submit" disabled={participantSaving} className={`btn-gold min-h-[44px] rounded-xl px-5 text-sm font-black ${focusRing}`}>
+              {participantSaving ? "Menyimpan…" : "Simpan Peserta"}
             </button>
           </ModalActions>
         </form>
@@ -608,30 +635,35 @@ export default function AdminDashboardPage() {
       {/* ===== MODAL: BULK CSV IMPORT ===== */}
       <Modal
         open={showBulkImport}
-        onClose={() => setShowBulkImport(false)}
+        onClose={() => { if (!participantSubmitting.current) setShowBulkImport(false); }}
         title="Import Massal Peserta"
         maxWidth="max-w-lg"
         description={
           <>
-            Tempel CSV dengan format <code className="font-mono text-[#FACC15]">username,full_name,session_batch</code>.
-            Token dibuat otomatis jika dikosongkan.
+            Unggah CSV/Excel atau tempel CSV: <code className="font-mono text-[#FACC15]">username,full_name,session_batch,access_token</code>.
+            Token kosong dibuat otomatis. Maksimal 500 peserta; duplikat membatalkan seluruh import, tanpa menimpa data lama.
           </>
         }
       >
+        <label htmlFor="bulk-file" className={labelCls}>File CSV / Excel (maksimal 5 MB)</label>
+        <input id="bulk-file" type="file" accept=".csv,.xlsx,.xls" disabled={participantSaving} onChange={(e) => { setBulkFile(e.target.files?.[0] ?? null); setParticipantError(""); }} className="field-night mb-4" />
         <label htmlFor="bulk-csv" className={labelCls}>
           Data CSV
         </label>
         <textarea
           id="bulk-csv"
+          disabled={participantSaving || bulkFile !== null}
           rows={8}
           value={bulkCsvText}
           onChange={(e) => setBulkCsvText(e.target.value)}
           placeholder={`103012600007,Fajar Ramadhan,Day 1\n103012600008,Gita Permata,Day 1\n103012600009,Hadi Pratama,Day 2`}
           className="field-night w-full rounded-xl p-3 font-mono text-xs"
         />
+        {participantError && <p role="alert" className="mt-3 text-sm text-red-300">{participantError}</p>}
         <ModalActions>
           <button
             type="button"
+            disabled={participantSaving}
             onClick={() => setShowBulkImport(false)}
             className={`btn-ghost-night min-h-[44px] rounded-xl px-5 text-sm font-bold ${focusRing}`}
           >
@@ -640,9 +672,10 @@ export default function AdminDashboardPage() {
           <button
             type="button"
             onClick={handleBulkImportCsv}
+            disabled={participantSaving || (!bulkFile && !bulkCsvText.trim())}
             className={`btn-gold min-h-[44px] rounded-xl px-5 text-sm font-black ${focusRing}`}
           >
-            Proses Import
+            {participantSaving ? "Mengimpor…" : "Proses Import"}
           </button>
         </ModalActions>
       </Modal>

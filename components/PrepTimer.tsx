@@ -24,6 +24,31 @@ interface StoredTimer {
 const STAR_COUNT = 8;
 const URGENT_MS = 30_000;
 
+function restoreTimer(raw: string | null, now: number): StoredTimer | null {
+  if (!raw) return null;
+  const saved: StoredTimer | null = JSON.parse(raw);
+  if (!saved || !["idle", "running", "paused", "done"].includes(saved.status) ||
+      !Number.isFinite(saved.remainingMs) || saved.remainingMs < 0 ||
+      !Number.isFinite(saved.initialSeconds) || saved.initialSeconds <= 0) return null;
+  if (saved.status === "running") {
+    if (!Number.isFinite(saved.endTimestamp)) return null;
+    const remainingMs = Math.max(0, saved.endTimestamp! - now);
+    return { ...saved, remainingMs, status: remainingMs > 0 ? "running" : "done" };
+  }
+  if (saved.status === "done") return { ...saved, remainingMs: 0 };
+  if (saved.status === "paused" && saved.remainingMs === 0) return { ...saved, status: "done" };
+  return saved;
+}
+
+function storeTimer(key: string, value: StoredTimer | null) {
+  try {
+    if (value) localStorage.setItem(key, JSON.stringify(value));
+    else localStorage.removeItem(key);
+  } catch {
+    // A blocked/full store must not stop the in-memory countdown.
+  }
+}
+
 export default function PrepTimer({
   initialSeconds = 300,
   username,
@@ -31,9 +56,8 @@ export default function PrepTimer({
   className = "",
 }: PrepTimerProps) {
   const reduce = useReducedMotion();
-  const totalMs = Math.max(1, Math.round(initialSeconds)) * 1000;
+  const totalMs = (Number.isFinite(initialSeconds) ? Math.max(1, Math.round(initialSeconds)) : 300) * 1000;
   
-  // Storage key uniquely tied to both username and the current spin timestamp (spunAt)
   const spunId = spunAt ? new Date(spunAt).getTime() : "init";
   const storageKey = `generatics_timer_${username || "anonymous"}_${spunId}`;
 
@@ -44,54 +68,22 @@ export default function PrepTimer({
   const endRef = useRef(0);
   const alertedRef = useRef(false);
 
-  // Clean up any stale timer keys for this user from previous spins
   useEffect(() => {
-    if (typeof window === "undefined" || !username) return;
+    endRef.current = 0;
+    alertedRef.current = false;
+    setStatus("idle");
+    setRemainingMs(totalMs);
+    setAnnouncement("");
     try {
-      const prefix = `generatics_timer_${username}_`;
-      Object.keys(localStorage).forEach((k) => {
-        if (k.startsWith(prefix) && k !== storageKey) {
-          localStorage.removeItem(k);
-        }
-      });
+      const saved = restoreTimer(localStorage.getItem(storageKey), Date.now());
+      if (!saved) return;
+      endRef.current = saved.endTimestamp || 0;
+      setStatus(saved.status);
+      setRemainingMs(saved.remainingMs);
     } catch {
-      // Ignore storage errors
+      // Storage is optional; fall back to an idle timer for this spin.
     }
-  }, [username, storageKey]);
-
-  // Restore saved timer state from localStorage on mount
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    try {
-      const raw = localStorage.getItem(storageKey);
-      if (!raw) return;
-      const saved: StoredTimer = JSON.parse(raw);
-
-      if (saved.status === "running" && saved.endTimestamp) {
-        const left = Math.max(0, saved.endTimestamp - Date.now());
-        if (left <= 0) {
-          setStatus("done");
-          setRemainingMs(0);
-          localStorage.setItem(
-            storageKey,
-            JSON.stringify({ status: "done", remainingMs: 0, initialSeconds })
-          );
-        } else {
-          endRef.current = saved.endTimestamp;
-          setRemainingMs(left);
-          setStatus("running");
-        }
-      } else if (saved.status === "paused") {
-        setStatus("paused");
-        setRemainingMs(Math.max(0, saved.remainingMs));
-      } else if (saved.status === "done") {
-        setStatus("done");
-        setRemainingMs(0);
-      }
-    } catch {
-      // LocalStorage parse error: fallback to idle
-    }
-  }, [storageKey, initialSeconds]);
+  }, [storageKey, totalMs]);
 
   const remaining = remainingMs ?? totalMs;
 
@@ -114,12 +106,7 @@ export default function PrepTimer({
         soundManager.playTimerEnd();
         setAnnouncement("Waktu persiapan selesai.");
         setStatus("done");
-        if (typeof window !== "undefined") {
-          localStorage.setItem(
-            storageKey,
-            JSON.stringify({ status: "done", remainingMs: 0, initialSeconds })
-          );
-        }
+        storeTimer(storageKey, { status: "done", remainingMs: 0, initialSeconds });
       }
     }, 250);
 
@@ -133,20 +120,15 @@ export default function PrepTimer({
     const end = Date.now() + totalMs;
     endRef.current = end;
     setRemainingMs(totalMs);
-    setAnnouncement("Waktu persiapan telah dimulai. Timer berjalan terus tanpa jeda.");
+    setAnnouncement("Waktu persiapan telah dimulai. Timer berjalan hingga selesai atau dijeda.");
     setStatus("running");
 
-    if (typeof window !== "undefined") {
-      localStorage.setItem(
-        storageKey,
-        JSON.stringify({
-          status: "running",
-          remainingMs: totalMs,
-          endTimestamp: end,
-          initialSeconds,
-        })
-      );
-    }
+    storeTimer(storageKey, {
+      status: "running",
+      remainingMs: totalMs,
+      endTimestamp: end,
+      initialSeconds,
+    });
   };
 
   const handlePause = (e: React.MouseEvent) => {
@@ -157,16 +139,11 @@ export default function PrepTimer({
     setStatus("paused");
     setAnnouncement("Timer persiapan dijeda.");
 
-    if (typeof window !== "undefined") {
-      localStorage.setItem(
-        storageKey,
-        JSON.stringify({
-          status: "paused",
-          remainingMs: currentLeft,
-          initialSeconds,
-        })
-      );
-    }
+    storeTimer(storageKey, {
+      status: "paused",
+      remainingMs: currentLeft,
+      initialSeconds,
+    });
   };
 
   const handleResume = (e: React.MouseEvent) => {
@@ -178,17 +155,12 @@ export default function PrepTimer({
     setStatus("running");
     setAnnouncement("Timer persiapan dilanjutkan.");
 
-    if (typeof window !== "undefined") {
-      localStorage.setItem(
-        storageKey,
-        JSON.stringify({
-          status: "running",
-          remainingMs: currentLeft,
-          endTimestamp: end,
-          initialSeconds,
-        })
-      );
-    }
+    storeTimer(storageKey, {
+      status: "running",
+      remainingMs: currentLeft,
+      endTimestamp: end,
+      initialSeconds,
+    });
   };
 
   const handleReset = (e: React.MouseEvent) => {
@@ -199,9 +171,7 @@ export default function PrepTimer({
     setRemainingMs(totalMs);
     setAnnouncement("Timer persiapan telah direset ke awal.");
 
-    if (typeof window !== "undefined") {
-      localStorage.removeItem(storageKey);
-    }
+    storeTimer(storageKey, null);
   };
 
   const secondsLeft = Math.ceil(remaining / 1000);

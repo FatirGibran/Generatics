@@ -2,8 +2,19 @@ import { SignJWT, jwtVerify } from "jose";
 import { cookies } from "next/headers";
 import { AuthSession } from "./types";
 
-const JWT_SECRET_STRING = process.env.JWT_SECRET || "generatics-twinkle-twinkle-cosmic-secret-key-2026";
-const key = new TextEncoder().encode(JWT_SECRET_STRING);
+function getSigningKey(): Uint8Array {
+  const secret = process.env.JWT_SECRET;
+  if (!secret || secret.length < 32) {
+    throw new Error("JWT_SECRET must be configured with at least 32 characters.");
+  }
+  return new TextEncoder().encode(secret);
+}
+
+function isAuthSession(payload: unknown): payload is AuthSession {
+  return !!payload && typeof payload === "object" && "role" in payload && "username" in payload &&
+    (payload.role === "admin" || payload.role === "participant") &&
+    typeof payload.username === "string" && payload.username.trim().length > 0;
+}
 
 // Dedicated role-separated cookies to prevent session collisions when testing both roles in one browser
 export const COOKIE_NAME = "generatics_session";
@@ -11,6 +22,8 @@ export const ADMIN_COOKIE_NAME = "generatics_admin_session";
 export const PARTICIPANT_COOKIE_NAME = "generatics_participant_session";
 
 export async function signSessionToken(payload: AuthSession): Promise<string> {
+  const key = getSigningKey();
+  if (!isAuthSession(payload)) throw new Error("Session requires a valid role and non-empty username.");
   return await new SignJWT({ ...payload })
     .setProtectedHeader({ alg: "HS256" })
     .setIssuedAt()
@@ -19,9 +32,10 @@ export async function signSessionToken(payload: AuthSession): Promise<string> {
 }
 
 export async function verifySessionToken(token: string): Promise<AuthSession | null> {
+  const key = getSigningKey();
   try {
-    const { payload } = await jwtVerify(token, key);
-    return payload as unknown as AuthSession;
+    const { payload } = await jwtVerify(token, key, { algorithms: ["HS256"] });
+    return isAuthSession(payload) ? payload : null;
   } catch {
     return null;
   }

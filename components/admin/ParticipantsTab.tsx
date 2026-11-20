@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Check, Copy, Plus, RotateCcw, Search, Trash2, Upload, UserRound, X } from "lucide-react";
+import { Check, Copy, Pencil, Plus, RotateCcw, Search, Trash2, Upload, UserRound, X } from "lucide-react";
 import type { Participant } from "@/lib/types";
 import { soundManager } from "@/lib/audio";
 import { copyTextToClipboard } from "@/lib/clipboard";
@@ -14,6 +14,7 @@ interface ParticipantsTabProps {
   participants: Participant[];
   onAdd: () => void;
   onBulk: () => void;
+  onEdit: (p: Participant) => void;
   onRequestReset: (p: Participant) => void;
   onRequestDelete: (p: Participant) => void;
   notify: (text: string, type?: "success" | "error") => void;
@@ -57,6 +58,7 @@ export default function ParticipantsTab({
   participants,
   onAdd,
   onBulk,
+  onEdit,
   onRequestReset,
   onRequestDelete,
   notify,
@@ -175,7 +177,8 @@ export default function ParticipantsTab({
     );
 
   const renderActions = (p: Participant) => (
-    <div className="flex items-center justify-end gap-1.5">
+    <div className="flex flex-wrap items-center justify-end gap-1.5">
+      <button type="button" onClick={() => onEdit(p)} aria-label={`Ubah peserta ${p.fullName}`} className={`flex h-10 w-10 items-center justify-center rounded-lg text-[#A5B4FC] hover:bg-white/10 ${focusRing}`}><Pencil className="h-4 w-4" /></button>
       {p.hasSpun && (
         <button
           type="button"
@@ -224,7 +227,7 @@ export default function ParticipantsTab({
             className={`btn-ghost-night inline-flex min-h-[44px] items-center gap-2 rounded-xl px-4 text-sm font-bold ${focusRing}`}
           >
             <Upload className="h-4 w-4 text-[#818CF8]" />
-            Import CSV
+            Import CSV / Excel
           </button>
           <button
             type="button"

@@ -4,19 +4,22 @@ import { signSessionToken, PARTICIPANT_COOKIE_NAME, COOKIE_NAME } from "@/lib/au
 
 export async function POST(req: NextRequest) {
   try {
-    await ensurePrismaWAL();
-    const { username, accessToken } = await req.json();
+    const body = await req.json().catch(() => null);
+    const username = body?.username;
+    const accessToken = body?.accessToken;
 
-    if (!username || !accessToken) {
+    if (typeof username !== "string" || typeof accessToken !== "string" ||
+        !username.trim() || !accessToken.trim()) {
       return NextResponse.json(
         { error: "Username dan Token Akses wajib diisi." },
         { status: 400 }
       );
     }
 
-    const cleanUsername = String(username).trim();
-    const cleanToken = String(accessToken).trim().toUpperCase();
+    const cleanUsername = username.trim();
+    const cleanToken = accessToken.trim().toUpperCase();
 
+    await ensurePrismaWAL();
     const participant = await prisma.participant.findUnique({
       where: { username: cleanUsername },
     });
@@ -77,8 +80,7 @@ export async function POST(req: NextRequest) {
     });
 
     return response;
-  } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : "Terjadi kesalahan internal server.";
-    return NextResponse.json({ error: message }, { status: 500 });
+  } catch {
+    return NextResponse.json({ error: "Terjadi kesalahan internal server. Silakan coba lagi." }, { status: 500 });
   }
 }
