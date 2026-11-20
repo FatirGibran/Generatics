@@ -97,10 +97,18 @@ export default function SpinPage() {
             return spinResult;
           });
         } else {
-          // NOT SPUN: Clean up any stale closing flags and unlock wheel immediately
+          // NOT SPUN: Clean up any stale closing flags and timer cache, unlock wheel immediately
           if (typeof window !== "undefined") {
             sessionStorage.removeItem(`generatics_closing_${p.username}`);
             localStorage.removeItem(`generatics_result_${p.username}`);
+            try {
+              const prefix = `generatics_timer_${p.username}`;
+              Object.keys(localStorage).forEach((k) => {
+                if (k.startsWith(prefix)) localStorage.removeItem(k);
+              });
+            } catch {
+              // Ignore storage errors
+            }
           }
           setShowClosing(false);
           setResult((prev) => {
@@ -129,7 +137,9 @@ export default function SpinPage() {
     setLoadError(null);
     setReady(false);
     try {
-      const meRes = await fetch("/api/auth/me?role=participant", { cache: "no-store" });
+      const meRes = await fetch(`/api/auth/me?role=participant&_t=${Date.now()}`, {
+        cache: "no-store",
+      });
       if (meRes.status === 401) {
         router.replace("/");
         return;
@@ -171,6 +181,18 @@ export default function SpinPage() {
         setResult(lockedResult);
       } else {
         soundManager.setBGMMood("curious");
+        if (typeof window !== "undefined") {
+          sessionStorage.removeItem(`generatics_closing_${p.username}`);
+          localStorage.removeItem(`generatics_result_${p.username}`);
+          try {
+            const prefix = `generatics_timer_${p.username}`;
+            Object.keys(localStorage).forEach((k) => {
+              if (k.startsWith(prefix)) localStorage.removeItem(k);
+            });
+          } catch {
+            // Ignore storage errors
+          }
+        }
         setResult(null);
         setShowClosing(false);
       }
@@ -398,8 +420,8 @@ export default function SpinPage() {
               DEBATE GENERATICS 2026
             </h1>
 
-            <p className="mt-1 font-display text-base italic text-[#FACC15]/90 sm:text-lg">
-              Beyond the Stars: A Universe of Perspectives
+            <p className="mt-1 font-display text-base italic tracking-wide text-[#FACC15]/90 sm:text-lg">
+              BEYOND THE STARS: A Universe of Perspectives
             </p>
 
             <div className="mt-2.5 inline-flex items-center gap-2 rounded-md bg-[#FAF6EB]/5 px-3 py-1 font-sans text-xs font-semibold tracking-wider text-[#FAF6EB]/70 border border-[#FAF6EB]/10">

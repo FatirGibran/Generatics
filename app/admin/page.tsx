@@ -87,7 +87,7 @@ export default function AdminDashboardPage() {
   useEffect(() => {
     async function checkAuth() {
       try {
-        const res = await fetch("/api/auth/me?role=admin", { cache: "no-store" });
+        const res = await fetch(`/api/auth/me?role=admin&_t=${Date.now()}`, { cache: "no-store" });
         const data = await res.json();
         if (!data.authenticated || data.role !== "admin") {
           window.location.replace("/admin/login");
