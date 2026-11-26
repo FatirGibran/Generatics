@@ -135,3 +135,12 @@ Memperbarui pengaturan global sistem.
   "prepDurationSeconds": 300
 }
 ```
+
+### `GET /api/admin/participants`
+Mengambil daftar seluruh peserta terdaftar beserta status undian dan mosi yang diperoleh.
+
+**Query Parameters:**
+- `batch`: (opsional) `"ALL"`, `"Day 1"`, atau `"Day 2"`
+
+### `POST /api/admin/participants`
+Mendaftarkan peserta baru (satuan atau massal).
