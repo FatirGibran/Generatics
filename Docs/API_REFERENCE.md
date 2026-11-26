@@ -77,3 +77,25 @@ Memverifikasi status sesi aktif dari cookie yang tersimpan di browser.
   }
 }
 ```
+
+## 2. Endpoint Arena Spin
+
+### `GET /api/spin`
+Mengambil konfigurasi arena undian: tema aktif, status gerbang spin, durasi timer, dan profil undian peserta aktif.
+
+**Response (200 OK):**
+```json
+{
+  "settings": {
+    "isSpinOpen": true,
+    "prepDurationSeconds": 300
+  },
+  "themes": [
+    { "id": "theme-1", "name": "Teknologi & Kecerdasan Buatan" }
+  ],
+  "participant": {
+    "username": "103112430153",
+    "hasSpun": false
+  }
+}
+```
