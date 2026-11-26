@@ -10,3 +10,12 @@
 - Saat tombol spin ditekan, roda berputar dengan akselerasi kinetik dan efek partikel bintang.
 - Putaran berlangsung selama 5–7 detik dengan perlambatan kurva cubic-bezier hingga berhenti tepat pada tema terpilih.
 - Confetti emas/hijau/oranye meletus saat kartu hasil terkunci resmi.
+
+## 3. Kartu Hasil Mosi & Timer Persiapan
+- Hasil undian menampilkan kategori tema, mosi resmi dalam tipografi serif elegan, dan tiket posisi (TIM PRO / TIM KONTRA).
+- Kotak Waktu Persiapan Argumen (Case Building) menyediakan kontrol timer murni:
+  - `Mulai Persiapan`
+  - `Jeda`
+  - `Lanjutkan`
+  - `Ulangi Timer`
+- State timer diikat dengan ID putaran (`spunAt`) sehingga bebas dari bug sisa waktu 00:00 saat terjadi reset.
