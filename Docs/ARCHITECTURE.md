@@ -10,3 +10,18 @@ Aplikasi ini dibangun menggunakan tumpukan teknologi modern:
 - **Audio Engine:** Sintesis Web Audio API kustom (bebas file audio eksternal).
 - **ORM & Database:** Prisma ORM dengan SQLite (mode WAL aktif).
 - **Process Manager:** PM2 cluster mode untuk produksi 24/7 di macOS.
+
+## 2. Pola Arsitektur Client & Server
+Platform memisahkan tanggung jawab secara tegas antara komponen klien yang kaya interaktivitas visual dan API backend yang menjamin konsistensi data secara atomik.
+
+```mermaid
+flowchart TD
+    Client["Next.js Client (React 18)"]
+    API["Next.js Route Handlers (/api/*)"]
+    Auth["JWT Session Manager (jose)"]
+    DB[(SQLite + Prisma WAL)]
+    
+    Client -->|HTTP / JSON| API
+    API -->|Verifikasi Cookie| Auth
+    API -->|Prisma Transaction| DB
+```
