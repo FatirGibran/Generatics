@@ -144,3 +144,9 @@ Mengambil daftar seluruh peserta terdaftar beserta status undian dan mosi yang d
 
 ### `POST /api/admin/participants`
 Mendaftarkan peserta baru (satuan atau massal).
+
+### `PATCH /api/admin/participants`
+Mengubah data identitas peserta (nama lengkap, sesi, atau token) tanpa merusak hasil undian yang sudah berjalan.
+
+### `DELETE /api/admin/participants?username={username}`
+Menghapus peserta dari basis data. Jika peserta sudah memutar roda, kuota `usedCount` pada mosi terkait akan dikurangi 1 secara otomatis.
