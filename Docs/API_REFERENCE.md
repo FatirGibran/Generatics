@@ -166,3 +166,20 @@ Atau untuk reset per batch:
   "batch": "Day 1"
 }
 ```
+
+### `GET /api/admin/overview`
+Mengambil data agregasi statistik dan log hasil undian terbaru untuk tampilan dashboard panitia.
+
+**Response (200 OK):**
+```json
+{
+  "stats": {
+    "total": 7,
+    "spun": 3,
+    "unspun": 4,
+    "pro": 2,
+    "kontra": 1
+  },
+  "recentSpins": []
+}
+```
