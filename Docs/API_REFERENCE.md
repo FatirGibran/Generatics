@@ -5,3 +5,29 @@
 - **Autentikasi:** HTTP-only Cookie (`generatics_session`, `generatics_admin_session`, `generatics_participant_session`)
 - **Format Tanggal:** ISO 8601 UTC string (`YYYY-MM-DDTHH:mm:ss.sssZ`)
 - **Status Kode:** Standar HTTP (200 OK, 400 Bad Request, 401 Unauthorized, 404 Not Found, 409 Conflict, 500 Server Error)
+
+## 1. Endpoint Autentikasi
+
+### `POST /api/auth/participant`
+Melakukan login peserta menggunakan kombinasi NIM/Username dan Token Akses.
+
+**Request Body:**
+```json
+{
+  "username": "103112430153",
+  "accessToken": "STR-EXCY"
+}
+```
+
+**Response (200 OK):**
+```json
+{
+  "success": true,
+  "participant": {
+    "username": "103112430153",
+    "fullName": "Fatir Gibran",
+    "sessionBatch": "Day 1",
+    "hasSpun": false
+  }
+}
+```
