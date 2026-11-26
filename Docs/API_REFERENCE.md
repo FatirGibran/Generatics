@@ -189,3 +189,17 @@ Mengekspor laporan hasil undian seluruh peserta dalam format spreadsheet.
 
 **Query Parameters:**
 - `format`: `"xlsx"` atau `"csv"`
+
+### `GET /api/health`
+Health check liveness probe untuk memvalidasi uptime server dan ketersediaan koneksi basis data SQLite.
+
+**Response (200 OK):**
+```json
+{
+  "status": "ok",
+  "db": "connected",
+  "app": "debate-generatics-2026",
+  "uptime": 12450.2,
+  "timestamp": "2026-11-26T12:00:00.000Z"
+}
+```
