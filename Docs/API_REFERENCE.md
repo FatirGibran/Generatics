@@ -119,3 +119,19 @@ Mengeksekusi undian mosi dan posisi debat untuk peserta yang sedang login. Memil
   }
 }
 ```
+
+## 3. Endpoint Manajemen Admin
+
+### `GET /api/admin/settings`
+Mengambil status pengaturan global sistem (pembukaan gerbang spin dan durasi persiapan).
+
+### `PATCH /api/admin/settings`
+Memperbarui pengaturan global sistem.
+
+**Request Body:**
+```json
+{
+  "isSpinOpen": true,
+  "prepDurationSeconds": 300
+}
+```
