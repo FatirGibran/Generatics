@@ -10,3 +10,7 @@ Untuk mencegah tabrakan sesi saat panitia membuka halaman peserta dan admin di b
 - Sesi Admin disimpan pada cookie: `generatics_admin_session`.
 - Sesi Peserta disimpan pada cookie: `generatics_participant_session`.
 - Helper `getAdminSession()` dan `getParticipantSession()` membaca cookie masing-masing secara independen.
+
+## 3. Proteksi Single-Spin Lock
+- Status `hasSpun` diperiksa di tingkat transaksi basis data (`prisma.$transaction`).
+- Jika request spin kedua dikirimkan oleh peserta yang sama, sistem langsung mendeteksi `alreadySpun: true` dan mengembalikan mosi yang sudah terkunci sebelumnya tanpa mengundi ulang.
