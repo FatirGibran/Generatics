@@ -31,3 +31,24 @@ Melakukan login peserta menggunakan kombinasi NIM/Username dan Token Akses.
   }
 }
 ```
+
+### `POST /api/auth/admin`
+Melakukan login akun panitia/admin menggunakan username dan password.
+
+**Request Body:**
+```json
+{
+  "username": "admin",
+  "password": "generatics2026"
+}
+```
+
+**Response (200 OK):**
+```json
+{
+  "success": true,
+  "admin": {
+    "username": "admin"
+  }
+}
+```
