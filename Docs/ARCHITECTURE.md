@@ -25,3 +25,9 @@ flowchart TD
     API -->|Verifikasi Cookie| Auth
     API -->|Prisma Transaction| DB
 ```
+
+## 3. Sinkronisasi Data & Real-Time Polling
+Untuk menjaga status peserta tetap sinkron dengan keputusan admin (seperti pembukaan gerbang spin dan reset undian):
+- Peserta memvalidasi sesi secara berkala via endpoint `/api/auth/me?role=participant&_t={timestamp}`.
+- Header `cache: no-store` dan timestamp query param diterapkan di setiap pemanggilan untuk menghindari cache proxy browser.
+- Saat admin melakukan reset, klien peserta mendeteksi perubahan `hasSpun: false` dan secara otomatis mengosongkan state hasil undian serta cache timer lokal.
