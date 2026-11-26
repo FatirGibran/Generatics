@@ -99,3 +99,23 @@ Mengambil konfigurasi arena undian: tema aktif, status gerbang spin, durasi time
   }
 }
 ```
+
+### `POST /api/spin`
+Mengeksekusi undian mosi dan posisi debat untuk peserta yang sedang login. Memiliki proteksi idempotensi (single-spin lock).
+
+**Response (200 OK):**
+```json
+{
+  "success": true,
+  "alreadySpun": false,
+  "themeName": "Teknologi & Kecerdasan Buatan",
+  "motionText": "Dewan ini percaya bahwa penggunaan AI...",
+  "stance": "PRO",
+  "spunAt": "2026-11-20T10:00:00.000Z",
+  "participant": {
+    "username": "103112430153",
+    "fullName": "Fatir Gibran",
+    "sessionBatch": "Day 1"
+  }
+}
+```
