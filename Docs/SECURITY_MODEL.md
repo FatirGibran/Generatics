@@ -14,3 +14,8 @@ Untuk mencegah tabrakan sesi saat panitia membuka halaman peserta dan admin di b
 ## 3. Proteksi Single-Spin Lock
 - Status `hasSpun` diperiksa di tingkat transaksi basis data (`prisma.$transaction`).
 - Jika request spin kedua dikirimkan oleh peserta yang sama, sistem langsung mendeteksi `alreadySpun: true` dan mengembalikan mosi yang sudah terkunci sebelumnya tanpa mengundi ulang.
+
+## 4. Validasi Input & Pencegahan Duplikasi
+- Validasi data peserta menggunakan fungsi pengetikan ketat di `lib/participant-import.ts`.
+- Kode unik token dan username diproteksi oleh constraint unik SQLite (`P2002`).
+- Setiap pelanggaran integritas data menghasilkan pesan error ramah pengguna dalam bahasa Indonesia.
