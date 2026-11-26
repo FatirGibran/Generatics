@@ -150,3 +150,19 @@ Mengubah data identitas peserta (nama lengkap, sesi, atau token) tanpa merusak h
 
 ### `DELETE /api/admin/participants?username={username}`
 Menghapus peserta dari basis data. Jika peserta sudah memutar roda, kuota `usedCount` pada mosi terkait akan dikurangi 1 secara otomatis.
+
+### `POST /api/admin/participants/reset`
+Mereset status undian peserta agar dapat memutar roda spin kembali.
+
+**Request Body:**
+```json
+{
+  "username": "103112430153"
+}
+```
+Atau untuk reset per batch:
+```json
+{
+  "batch": "Day 1"
+}
+```
