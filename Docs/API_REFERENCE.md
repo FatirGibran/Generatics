@@ -183,3 +183,9 @@ Mengambil data agregasi statistik dan log hasil undian terbaru untuk tampilan da
   "recentSpins": []
 }
 ```
+
+### `GET /api/admin/export`
+Mengekspor laporan hasil undian seluruh peserta dalam format spreadsheet.
+
+**Query Parameters:**
+- `format`: `"xlsx"` atau `"csv"`
