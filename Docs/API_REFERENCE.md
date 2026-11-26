@@ -52,3 +52,28 @@ Melakukan login akun panitia/admin menggunakan username dan password.
   }
 }
 ```
+
+### `GET /api/auth/me`
+Memverifikasi status sesi aktif dari cookie yang tersimpan di browser.
+
+**Query Parameters:**
+- `role`: (opsional) `"admin"` atau `"participant"`
+- `_t`: Timestamp anti-cache
+
+**Response (200 OK):**
+```json
+{
+  "authenticated": true,
+  "role": "participant",
+  "participant": {
+    "username": "103112430153",
+    "fullName": "Fatir Gibran",
+    "sessionBatch": "Day 1",
+    "hasSpun": false,
+    "assignedMotionText": null,
+    "assignedThemeName": null,
+    "assignedStance": null,
+    "spunAt": null
+  }
+}
+```
