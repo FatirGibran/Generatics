@@ -61,3 +61,8 @@ Menyimpan identitas unik peserta debat:
 - `assignedMotionId`: Relasi ke mosi terpilih (`SetNull` saat mosi dihapus).
 - `assignedStance`: Posisi debat terpilih (`PRO` atau `KONTRA`).
 - `spunAt`: Timestamp presisi penguncian hasil undian.
+
+### 2. Model `Theme` & `Motion`
+- Relasi `Theme -> Motion` bersifat `Cascade Delete`: penghapusan tema menghapus seluruh mosi di bawahnya.
+- Atribut `usedCount`: Menghitung berapa kali mosi telah diundi oleh peserta aktif.
+- Atribut `maxUsage`: Membatasi frekuensi maksimal mosi dapat diundi sebelum statusnya otomatis nonaktif.
