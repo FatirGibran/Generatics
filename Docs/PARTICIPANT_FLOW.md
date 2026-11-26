@@ -19,3 +19,7 @@
   - `Lanjutkan`
   - `Ulangi Timer`
 - State timer diikat dengan ID putaran (`spunAt`) sehingga bebas dari bug sisa waktu 00:00 saat terjadi reset.
+
+## 4. Layar Penutup & Himbauan Screenshot
+- Tombol aksi utama `Selesai Sesi & Lanjut Pengumuman` membuka layar penutup resmi `PostDebateScreen`.
+- Peserta dihimbau melakukan tangkapan layar (screenshot) kartu mosi sebagai bukti fisik cadangan bagi dewan juri.
