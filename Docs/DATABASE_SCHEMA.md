@@ -49,3 +49,15 @@ erDiagram
         datetime updatedAt
     }
 ```
+
+## Karakteristik Tabel Utama
+
+### 1. Model `Participant`
+Menyimpan identitas unik peserta debat:
+- `username`: NIM atau ID unik peserta.
+- `accessToken`: Token akses 4 karakter terenkode (format: `STR-XXXX`).
+- `sessionBatch`: Sesi pelaksanaan (`Day 1` atau `Day 2`).
+- `hasSpun`: Flag boolean proteksi single-spin.
+- `assignedMotionId`: Relasi ke mosi terpilih (`SetNull` saat mosi dihapus).
+- `assignedStance`: Posisi debat terpilih (`PRO` atau `KONTRA`).
+- `spunAt`: Timestamp presisi penguncian hasil undian.
