@@ -30,3 +30,8 @@ Jika peserta mengalami kendala teknis darurat di panggung:
 - Pada tab **Pengaturan**, switch **Akses Spin** dapat diaktifkan/dinonaktifkan kapan saja.
 - Jika akses ditutup, peserta yang menekan roda akan mendapatkan notifikasi bahwa arena belum dibuka oleh panitia.
 - Durasi persiapan dapat disesuaikan (default: 300 detik / 5 menit).
+
+## 5. Ekspor Data Pertandingan
+- Di pojok kanan atas tab **Peserta & Token**, klik tombol **Export Data**.
+- Pilih format Excel (`.xlsx`) atau `.csv`.
+- Data memuat: NIM, Nama, Sesi, Status Undian, Tema, Teks Mosi, Posisi (PRO/KONTRA), dan Waktu Putar.
