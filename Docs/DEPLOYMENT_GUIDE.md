@@ -13,3 +13,9 @@ npx pm2 status
 # Melihat log langsung
 npx pm2 logs debate-generatics-2026
 ```
+
+## 2. Konfigurasi `ecosystem.config.js`
+- Nama aplikasi: `debate-generatics-2026`
+- Script: `node_modules/next/dist/bin/next start`
+- Memory threshold: `max_memory_restart: "1G"`
+- Autorestart: `true` (otomatis bangun kembali jika crash).
