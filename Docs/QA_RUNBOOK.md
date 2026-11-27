@@ -35,3 +35,6 @@ npx tsx scripts/concurrency-test.ts
 15. Reset status undian oleh panitia.
 16. Ekspor laporan dalam format CSV dan XLSX.
 17. Pembersihan data uji coba dari basis data.
+
+## 3. Uji Konkurensi & Stres 10 Spin Simultan
+Skrip `scripts/concurrency-test.ts` memverifikasi ketahanan basis data SQLite WAL saat menerima 10 permintaan putaran di milidetik yang sama tanpa terjadi deadlock atau selisih kuota mosi.
