@@ -7,3 +7,7 @@
 ## 2. Peserta Tidak Sengaja Menutup Tab Saat Timer Berjalan
 - **Penyebab:** Peserta me-refresh atau menutup tab peramban saat case building.
 - **Solusi:** Timer menggunakan timestamp akhir absolut (`endTimestamp`) di `localStorage`. Saat halaman dibuka kembali, sisa detik dihitung ulang tanpa ada penambahan waktu curang.
+
+## 3. Error Basis Data Terkunci (Database Locked)
+- **Penyebab:** SQLite diakses oleh proses paralel tanpa mode WAL aktif.
+- **Solusi:** Jalankan fungsi `ensurePrismaWAL()` yang memastikan mode `PRAGMA journal_mode = WAL;` dan timeout 5000ms selalu aktif.
