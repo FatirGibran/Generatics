@@ -23,3 +23,10 @@ npx pm2 logs debate-generatics-2026
 ## 3. Ekspos Jaringan Lokal & Cloudflare Tunnel
 - **Akses LAN:** Komputer juri dan peserta dapat mengakses server via IP lokal Mac (contoh: `http://192.168.1.50:3000`).
 - **Cloudflare Tunnel:** Menggunakan skrip `./scripts/expose-public.sh` untuk menghasilkan tautan HTTPS publik yang aman tanpa konfigurasi port forwarding router.
+
+## 4. Deployment Vercel Cloud
+Aplikasi juga dapat dideploy ke Vercel untuk kebutuhan demonstrasi atau pengujian daring:
+```bash
+npx vercel --prod --yes
+```
+Tautan produksi: `https://debate-generatics-2026.vercel.app`.
