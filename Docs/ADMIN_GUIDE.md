@@ -25,3 +25,8 @@ Jika peserta mengalami kendala teknis darurat di panggung:
 2. Cari peserta via kolom pencarian atau filter status.
 3. Klik tombol **Reset Spin**.
 4. Sistem akan mengembalikan status peserta ke `Belum Spin`, memulihkan kuota mosi, dan membersihkan cache timer peserta secara otomatis.
+
+## 4. Pembukaan Gerbang Spin & Durasi Timer
+- Pada tab **Pengaturan**, switch **Akses Spin** dapat diaktifkan/dinonaktifkan kapan saja.
+- Jika akses ditutup, peserta yang menekan roda akan mendapatkan notifikasi bahwa arena belum dibuka oleh panitia.
+- Durasi persiapan dapat disesuaikan (default: 300 detik / 5 menit).
