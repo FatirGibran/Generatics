@@ -18,3 +18,10 @@ Panitia dapat menambahkan peserta melalui dua cara:
 2. **Import Massal (CSV / XLSX):**
    - Format: `username,full_name,session_batch,access_token`.
    - File maksimal 5 MB (hingga 500 peserta dalam satu kali unggah).
+
+## 3. Kontrol Reset Putaran Peserta
+Jika peserta mengalami kendala teknis darurat di panggung:
+1. Masuk ke tab **Peserta & Token**.
+2. Cari peserta via kolom pencarian atau filter status.
+3. Klik tombol **Reset Spin**.
+4. Sistem akan mengembalikan status peserta ke `Belum Spin`, memulihkan kuota mosi, dan membersihkan cache timer peserta secara otomatis.
