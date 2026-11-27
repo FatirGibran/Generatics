@@ -8,3 +8,8 @@
 - **Kontra Team Crimson/Orange:** `#F97316`
 - **Nebula Pink:** `#F472B6`
 - **Indigo Accent:** `#4F46E5`
+
+## 2. Tipografi
+- **Display Font:** Editorial Serif berbobot tinggi untuk judul utama *DEBATE GENERATICS 2026* dan kutipan mosi resmi.
+- **Sans Font:** Inter / System UI sans-serif untuk label, petunjuk, dan timer angka.
+- **Mono Font:** Monospace untuk token akses (`STR-XXXX`) dan NIM peserta.
